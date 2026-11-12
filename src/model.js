@@ -16,17 +16,21 @@ import { WORKFLOWS, RECENT } from './config.js';
 export const STAGES = ['commit', 'qa', 'androidQa', 'prod', 'androidProd'];
 
 const STAGE_ENV = { qa: 'qa', androidQa: 'android-qa', prod: 'prod', androidProd: 'android-prod' };
-// The workflow started by hand that moves a version into each stage.
+// The workflow started by hand that moves a version into each stage (its file: a run's `name` is
+// its run-name, "Deploy <sha> to qa"), and the prefix of its jobs doing that stage ("deploy / …",
+// "android-build / …", "android-qa / …"); its first job, "resolve", checks for all of them.
 const STAGE_WORKFLOW = {
-  qa: WORKFLOWS.deployQa.name,
-  androidQa: WORKFLOWS.deployQa.name,
-  prod: WORKFLOWS.promote.name,
-  androidProd: WORKFLOWS.promote.name,
+  qa: WORKFLOWS.deployQa.file,
+  androidQa: WORKFLOWS.deployQa.file,
+  prod: WORKFLOWS.promote.file,
+  androidProd: WORKFLOWS.promote.file,
 };
+const STAGE_JOBS = { qa: 'deploy', androidQa: 'android', prod: 'deploy', androidProd: 'android' };
+const fileOf = (run) => (run.path ?? '').split('/').pop();
 // The last stage each of those workflows reaches: where its failure shows when it left no
 // deployment saying more (refused at the start, or the APK build failed).
-const LAST_STAGE = (app, workflow) =>
-  workflow === WORKFLOWS.deployQa.name ? (app.android ? 'androidQa' : 'qa') : app.android ? 'androidProd' : 'prod';
+const LAST_STAGE = (app, file) =>
+  file === WORKFLOWS.deployQa.file ? (app.android ? 'androidQa' : 'qa') : app.android ? 'androidProd' : 'prod';
 
 // State of a workflow run or job (same fields).
 export function runState(run) {
@@ -98,6 +102,25 @@ function deploymentsOf(deployments, sha) {
   return (deployments ?? []).filter((d) => d.sha === sha);
 }
 
+// What a run that is still going does in a stage, from its jobs: nothing once that stage's jobs
+// are all done or skipped (its deployment then says how it went), else running or waiting, since
+// its first job of that stage started (or since the run started). Without its jobs: running.
+function runningStage(run, name, jobs) {
+  const at = time(run.created_at);
+  const runStart = run.run_started_at ?? run.created_at ?? null;
+  if (!jobs) return { at, state: runState(run), link: run.html_url, start: runStart, end: null };
+  const own = jobs.filter((j) => j.name.startsWith(STAGE_JOBS[name]));
+  if (own.length > 0 && own.every((j) => j.status === 'completed')) return null;
+  const going = own.find((j) => runState(j) === 'running');
+  return {
+    at,
+    state: going || jobs.some((j) => j.name === 'resolve' && runState(j) === 'running') ? 'running' : 'waiting',
+    link: going?.html_url ?? run.html_url,
+    start: earliest(own.map((j) => j.started_at)) ?? runStart,
+    end: null,
+  };
+}
+
 // The newest of what happened to a version in a stage: its deployments, the runs started by hand
 // for it (named after its sha) while they run, or that failed if it is their last stage, and, for
 // qa, the deploy job of Deliver.
@@ -116,10 +139,13 @@ function stage(app, name, sha, data, deliverJob) {
     });
   }
   for (const r of data.dispatchRuns ?? []) {
-    if (r.name !== STAGE_WORKFLOW[name] || !(r.display_title ?? '').includes(sha)) continue;
+    if (fileOf(r) !== STAGE_WORKFLOW[name] || !(r.display_title ?? '').includes(sha)) continue;
     const state = runState(r);
-    if (busy(state) || ((state === 'failure' || state === 'cancelled') && LAST_STAGE(app, r.name) === name)) {
-      events.push({ at: time(r.created_at), state, link: r.html_url, start: r.run_started_at ?? r.created_at ?? null, end: busy(state) ? null : (r.updated_at ?? null) });
+    if (busy(state)) {
+      const event = runningStage(r, name, data.dispatchJobs?.[r.id]);
+      if (event) events.push(event);
+    } else if ((state === 'failure' || state === 'cancelled') && LAST_STAGE(app, fileOf(r)) === name) {
+      events.push({ at: time(r.created_at), state, link: r.html_url, start: r.run_started_at ?? r.created_at ?? null, end: r.updated_at ?? null });
     }
   }
   if (deliverJob && runState(deliverJob) !== 'none') {
@@ -161,6 +187,7 @@ function current(deployments, live) {
  *   jobs: { [runId]: [job] }
  *   deployments: { qa: [deployment with .statuses], 'android-qa': …, prod: …, 'android-prod': … }
  *   dispatchRuns: [workflow run]               (started by hand, newest first)
+ *   dispatchJobs: { [runId]: [job] }           (of those still going)
  *   live: { qa: sha | null, prod: sha | null }
  * }
  * app: { android: boolean }

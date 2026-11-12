@@ -87,5 +87,13 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
   const jobs = {};
   await Promise.all([...firstRun.values()].map(async (run) => (jobs[run.id] = await jobsOf(gh, r, run, cache))));
 
-  return { commits, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, live };
+  // Jobs of the runs started by hand that are still going: which stage they are at.
+  const dispatchJobs = {};
+  await Promise.all(
+    dispatch.workflow_runs
+      .filter((run) => run.status !== 'completed')
+      .map(async (run) => (dispatchJobs[run.id] = await jobsOf(gh, r, run, cache))),
+  );
+
+  return { commits, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, dispatchJobs, live };
 }

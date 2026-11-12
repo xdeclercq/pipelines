@@ -116,11 +116,8 @@ document.addEventListener('visibilitychange', () => {
 $('apps').addEventListener('click', async (e) => {
   const button = e.target.closest('button[data-action]');
   if (!button || !gh) return;
-  // A greyed button says why when tapped (a phone shows no tooltip).
-  if (button.getAttribute('aria-disabled') === 'true') {
-    say(button.dataset.reason ?? '');
-    return;
-  }
+  // Already started: no second click while it launches.
+  if (button.getAttribute('aria-disabled') === 'true') return;
   const { action, repo, sha } = button.dataset;
   if (!confirm(confirmText(action))) return;
   const workflow = workflowOf(action);

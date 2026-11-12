@@ -45,7 +45,7 @@ h2 { display: flex; gap: .7rem; align-items: baseline; font-size: 1.05rem; margi
 h2 a { font-size: .8rem; font-weight: normal; color: var(--muted); }
 
 /* Five stages and the buttons, the same columns for the legend and each version. */
-.grid { display: grid; grid-template-columns: repeat(5, minmax(2.6rem, 1fr)) auto; align-items: center; column-gap: .25rem; }
+.grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; column-gap: .25rem; }
 .legend { font-size: .72rem; text-align: center; padding-bottom: .15rem; border-bottom: 1px solid var(--line); }
 .row { padding: .3rem .25rem .35rem; border-bottom: 1px solid var(--line); }
 .row.here { background: var(--here); }
@@ -72,9 +72,10 @@ h2 a { font-size: .8rem; font-weight: normal; color: var(--muted); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .running .icon { animation: none; } }
 
-.actions { display: flex; gap: .25rem; padding-left: .2rem; }
-.go { padding: .2rem .45rem; font-size: .8rem; white-space: nowrap; }
-.go.off { opacity: .35; cursor: help; }
+.go { justify-self: center; padding: .2rem .45rem; font-size: .8rem; font-weight: 600; white-space: nowrap; border-width: 1.5px; }
+/* Deployed again: the frame keeps the colour of how it went last time. */
+.go.was-success { border-color: var(--success); }
+.go.was-failure { border-color: var(--failure); }
 
 footer { margin-top: 1rem; font-size: .85rem; display: flex; flex-direction: column; align-items: flex-start; gap: .6rem; }
 footer p { margin: .4rem 0; }

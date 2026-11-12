@@ -1,5 +1,6 @@
 // Renders the pipelines, compact enough for a phone: per version, one line for the commit and one
-// for its stages (an icon and a duration each) and its buttons. Text from GitHub (commit messages)
+// for its five stages, an icon and a duration each. A button that can be used takes the place of
+// the stage it starts. Text from GitHub (commit messages)
 // only ever goes through textContent.
 
 import { WORKFLOWS } from './config.js';
@@ -22,6 +23,13 @@ const COLUMNS = [
   ['prod', 'Prod 🌐', 'Prod web'],
   ['androidProd', 'Prod 📱', 'Prod Android (APK envoyé au groupe family)'],
 ];
+
+// The stages each button starts; it shows in the first one not reached yet, or else (a version
+// deployed again) in the last one.
+const ACTION_STAGES = (app) => ({
+  deployQa: app.android ? ['qa', 'androidQa'] : ['qa'],
+  promote: app.android ? ['prod', 'androidProd'] : ['prod'],
+});
 
 const ACTIONS = [
   // U+FE0E: the triangle as text, not as an emoji (iOS).
@@ -81,7 +89,30 @@ function stageCell(key, name, stage, now) {
   );
 }
 
+function button(app, r, key, label, name, stage) {
+  const was = stage.state === 'none' ? '' : ` (actuellement : ${STATE[stage.state] ?? stage.state})`;
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: `go was-${stage.state}`,
+      title: `${name}${was}`,
+      'aria-label': `${name}${was}`,
+      'data-action': key,
+      'data-repo': app.repo,
+      'data-sha': r.sha,
+    },
+    label,
+  );
+}
+
 function row(app, r, now) {
+  const slots = {};
+  for (const [key, label, name] of ACTIONS) {
+    if (!r.actions[key].enabled) continue;
+    const stages = ACTION_STAGES(app)[key];
+    slots[stages.find((st) => r.stages[st].state === 'none') ?? stages.at(-1)] = [key, label, name];
+  }
   return h(
     'div',
     { class: `row${r.here.length ? ' here' : ''}` },
@@ -96,27 +127,8 @@ function row(app, r, now) {
     h(
       'div',
       { class: 'grid' },
-      COLUMNS.map(([key, , name]) => stageCell(key, name, r.stages[key], now)),
-      h(
-        'span',
-        { class: 'actions' },
-        ACTIONS.map(([key, label, name]) =>
-          h(
-            'button',
-            {
-              type: 'button',
-              class: r.actions[key].enabled ? 'go' : 'go off',
-              title: r.actions[key].enabled ? name : `${name} : ${r.actions[key].reason}`,
-              'aria-label': name,
-              'aria-disabled': r.actions[key].enabled ? null : 'true',
-              'data-action': key,
-              'data-repo': app.repo,
-              'data-sha': r.sha,
-              'data-reason': r.actions[key].reason ?? null,
-            },
-            label,
-          ),
-        ),
+      COLUMNS.map(([key, , name]) =>
+        slots[key] ? button(app, r, ...slots[key], r.stages[key]) : stageCell(key, name, r.stages[key], now),
       ),
     ),
   );
@@ -137,7 +149,7 @@ export function appSection(app, result, error, now = Date.now()) {
     'section',
     { class: 'app' },
     head,
-    h('div', { class: 'grid legend', 'aria-hidden': 'true' }, COLUMNS.map(([, legend, name]) => h('span', { title: name }, legend)), h('span', {})),
+    h('div', { class: 'grid legend', 'aria-hidden': 'true' }, COLUMNS.map(([, legend, name]) => h('span', { title: name }, legend))),
     result.rows.map((r) => row(app, r, now)),
   );
 }

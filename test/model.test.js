@@ -18,9 +18,13 @@ const deployment = (id, sha, minutes, states, payload = {}) => ({
   payload,
   statuses: states.map((state) => ({ state, log_url: `log/${id}` })),
 });
+// A run started by hand, as GitHub gives it: its name is its run-name, its workflow is its path.
+const FILES = { 'Deploy to qa': 'deploy-qa.yml', 'Promote to prod': 'promote.yml' };
 const dispatch = (name, sha, minutes, status = 'completed', conclusion = 'success') => ({
-  name,
-  display_title: `${name} ${sha}`,
+  id: 900 + minutes,
+  name: `${name.split(' ')[0]} ${sha} ${name.split(' ').slice(1).join(' ')}`,
+  path: `.github/workflows/${FILES[name]}`,
+  display_title: `${name.split(' ')[0]} ${sha} ${name.split(' ').slice(1).join(' ')}`,
   status,
   conclusion,
   html_url: `dispatch/${name}/${minutes}`,
@@ -165,6 +169,21 @@ describe('the pipeline of a version', () => {
     assert.equal(rowOf(refused, A).stages.androidProd.link, 'dispatch/Promote to prod/40');
     assert.equal(rowOf(refused, A).stages.prod.state, 'none');
     assert.equal(rowOf(refused, B).stages.prod.state, 'none', 'another version is not concerned');
+  });
+
+  test('a run in progress, stage by stage from its jobs', () => {
+    const run = dispatch('Deploy to qa', A, 40, 'in_progress', null);
+    const d = data({ dispatchRuns: [run] });
+    const states = (jobs) => {
+      d.dispatchJobs = { [run.id]: jobs };
+      const a = rowOf(pipeline(APP, d), A);
+      return [a.stages.qa.state, a.stages.androidQa.state];
+    };
+    assert.deepEqual(states([job('resolve', null, 'in_progress')]), ['running', 'running']);
+    assert.deepEqual(states([job('resolve'), job('deploy / deploy', null, 'in_progress')]), ['running', 'waiting']);
+    // qa already ran A: the web is skipped, only Android builds.
+    assert.deepEqual(states([job('resolve'), job('deploy', 'skipped'), { ...job('android-build / build', null, 'in_progress'), started_at: at(42) }]), ['success', 'running']);
+    assert.equal(rowOf(pipeline(APP, d), A).stages.androidQa.start, at(42));
   });
 
   test('the newest event wins: a redeploy to qa after an older success', () => {

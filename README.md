@@ -13,7 +13,9 @@ commit stage to prod, web and Android, with the buttons that move it on.
 | Prod web + Android | **▶ Prod** | the same image in prod; the prod APK built with the tested one sent to the group `family` |
 
 A button is enabled only for the versions that passed the previous stages, and each workflow
-checks it again on its side; a greyed button says why when tapped. Each application shows its 3
+checks it again on its side. A button only shows where it can be used, in place of the stage it
+starts (the first one not reached yet; for a version deployed again, the last one, framed in the
+colour of how it went). Each application shows its 3
 newest versions, and the versions in qa and in prod (web or Android) however old. Per version, a
 line for the commit and one for its stages: an icon each (🌐 web, 📱 Android) with its duration,
 counting while it runs. Made to fit a phone screen. The rules, the workflows and the rollback are described in the
