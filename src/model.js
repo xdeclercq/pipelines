@@ -8,7 +8,8 @@
 //   prod         web release (environment "prod")
 //   androidProd  Android release (environment "android-prod")
 //
-// A stage's state: success, failure, cancelled, running, waiting or none.
+// A stage's state: success, failure, cancelled, running, waiting or none; with its start and end
+// (ISO dates; no end while it runs) when known.
 
 import { WORKFLOWS, RECENT } from './config.js';
 
@@ -72,13 +73,24 @@ function combine(states) {
   return 'waiting';
 }
 
+const earliest = (dates) => dates.filter(Boolean).sort()[0] ?? null;
+const latest = (dates) => dates.filter(Boolean).sort().at(-1) ?? null;
+
 function commitStage(run, jobs) {
   if (!run) return { state: 'none' };
   const own = (jobs ?? []).filter((j) => j.name === 'test' || j.name === 'build');
-  if (own.length === 0) return { state: runState(run), link: run.html_url };
+  if (own.length === 0) {
+    const state = runState(run);
+    return { state, link: run.html_url, start: run.run_started_at ?? run.created_at ?? null, end: busy(state) ? null : (run.updated_at ?? null) };
+  }
   const state = combine(own.map(runState));
   const failed = own.find((j) => runState(j) === 'failure');
-  return { state, link: failed?.html_url ?? run.html_url };
+  return {
+    state,
+    link: failed?.html_url ?? run.html_url,
+    start: earliest(own.map((j) => j.started_at)),
+    end: own.every((j) => j.status === 'completed') ? latest(own.map((j) => j.completed_at)) : null,
+  };
 }
 
 // The deployments of a version to an environment.
@@ -92,28 +104,44 @@ function deploymentsOf(deployments, sha) {
 function stage(app, name, sha, data, deliverJob) {
   const events = [];
   for (const d of deploymentsOf(data.deployments[STAGE_ENV[name]], sha)) {
-    const latest = d.statuses?.find((s) => s.state !== 'inactive') ?? d.statuses?.[0];
+    const status = d.statuses?.find((s) => s.state !== 'inactive') ?? d.statuses?.[0];
+    const state = deploymentState(d.statuses);
     events.push({
       at: time(d.created_at),
-      state: deploymentState(d.statuses),
-      link: latest?.log_url || null,
+      state,
+      link: status?.log_url || null,
       versionCode: d.payload?.version_code ?? null,
+      start: d.created_at ?? null,
+      end: busy(state) ? null : (status?.created_at ?? null),
     });
   }
   for (const r of data.dispatchRuns ?? []) {
     if (r.name !== STAGE_WORKFLOW[name] || !(r.display_title ?? '').includes(sha)) continue;
     const state = runState(r);
     if (busy(state) || ((state === 'failure' || state === 'cancelled') && LAST_STAGE(app, r.name) === name)) {
-      events.push({ at: time(r.created_at), state, link: r.html_url });
+      events.push({ at: time(r.created_at), state, link: r.html_url, start: r.run_started_at ?? r.created_at ?? null, end: busy(state) ? null : (r.updated_at ?? null) });
     }
   }
   if (deliverJob && runState(deliverJob) !== 'none') {
-    events.push({ at: time(deliverJob.created_at ?? deliverJob.started_at), state: runState(deliverJob), link: deliverJob.html_url });
+    const state = runState(deliverJob);
+    events.push({
+      at: time(deliverJob.created_at ?? deliverJob.started_at),
+      state,
+      link: deliverJob.html_url,
+      start: deliverJob.started_at ?? deliverJob.created_at ?? null,
+      end: busy(state) ? null : (deliverJob.completed_at ?? null),
+    });
   }
   if (events.length === 0) return { state: 'none' };
   events.sort((a, b) => b.at - a.at);
   const newest = events[0];
-  return { state: newest.state, link: newest.link, versionCode: events.find((e) => e.versionCode != null)?.versionCode ?? null };
+  return {
+    state: newest.state,
+    link: newest.link,
+    start: newest.start ?? null,
+    end: newest.end ?? null,
+    versionCode: events.find((e) => e.versionCode != null)?.versionCode ?? null,
+  };
 }
 
 const everSucceeded = (deployments, sha) => deploymentsOf(deployments, sha).some((d) => deploymentState(d.statuses) === 'success');

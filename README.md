@@ -9,12 +9,14 @@ commit stage to prod, web and Android, with the buttons that move it on.
 | --- | --- | --- |
 | Commit | each push to `main` (Deliver) | tests; the Docker image built once |
 | qa web | right after (Deliver), at each push | that image deployed to qa, its commit checked, acceptance tests run on it |
-| qa web + Android | *Déployer en qa* | the web as above (skipped if qa already runs that version, accepted), then the qa and prod APKs built together; the qa one sent to the Firebase group `qa` |
-| Prod web + Android | *Mettre en prod* | the same image in prod; the prod APK built with the tested one sent to the group `family` |
+| qa web + Android | **▶ QA** | the web as above (skipped if qa already runs that version, accepted), then the qa and prod APKs built together; the qa one sent to the Firebase group `qa` |
+| Prod web + Android | **▶ Prod** | the same image in prod; the prod APK built with the tested one sent to the group `family` |
 
 A button is enabled only for the versions that passed the previous stages, and each workflow
-checks it again on its side. Each application shows its 3 newest versions, and the versions in qa
-and in prod (web or Android) however old. The rules, the workflows and the rollback are described in the
+checks it again on its side; a greyed button says why when tapped. Each application shows its 3
+newest versions, and the versions in qa and in prod (web or Android) however old. Per version, a
+line for the commit and one for its stages: an icon each (🌐 web, 📱 Android) with its duration,
+counting while it runs. Made to fit a phone screen. The rules, the workflows and the rollback are described in the
 README of each application ("Deployment pipeline").
 
 ## Using it
@@ -28,7 +30,7 @@ README of each application ("Deployment pipeline").
    - an expiration date.
 
    The page keeps it in the browser (`localStorage`) and sends it only to `api.github.com`.
-   *Oublier le jeton* removes it.
+   *Oublier le jeton* (under *Comment ça marche*, at the bottom) removes it.
 
 The page refreshes itself every 2 minutes, every 15 seconds while something runs, and when it
 comes back to the foreground.

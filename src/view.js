@@ -1,37 +1,40 @@
-// Renders the pipelines. Text from GitHub (commit messages) only ever goes through textContent.
+// Renders the pipelines, compact enough for a phone: per version, one line for the commit and one
+// for its stages (an icon and a duration each) and its buttons. Text from GitHub (commit messages)
+// only ever goes through textContent.
 
 import { WORKFLOWS } from './config.js';
+import { shortDuration, longDuration, elapsed, age } from './format.js';
 
 const STATE = {
-  success: ['✓', 'réussi'],
-  failure: ['✗', 'échec'],
-  cancelled: ['⊘', 'annulé'],
-  running: ['●', 'en cours'],
-  waiting: ['…', 'en attente'],
-  none: ['', ''],
+  success: 'réussi',
+  failure: 'échec',
+  cancelled: 'annulé',
+  running: 'en cours',
+  waiting: 'en attente',
+  none: 'pas encore',
 };
 
+// key, legend, name in the tooltips
 const COLUMNS = [
-  ['commit', 'Commit', 'Tests et image, à chaque push sur main'],
-  ['qa', 'qa web', 'Déployée en qa, tests d’acceptation passés (automatique à chaque push)'],
-  ['androidQa', 'qa Android', 'APK qa envoyé aux testeurs (groupe Firebase « qa ») par « Déployer en qa »'],
-  ['prod', 'Prod web', 'Image en prod'],
-  ['androidProd', 'Prod Android', 'APK prod envoyé au groupe « family »'],
+  ['commit', 'Commit', 'Commit (tests et image)'],
+  ['qa', 'QA 🌐', 'QA web (déploiement et tests d’acceptation)'],
+  ['androidQa', 'QA 📱', 'QA Android (APK envoyé aux testeurs)'],
+  ['prod', 'Prod 🌐', 'Prod web'],
+  ['androidProd', 'Prod 📱', 'Prod Android (APK envoyé au groupe family)'],
 ];
 
 const ACTIONS = [
-  ['deployQa', 'Déployer en qa'],
-  ['promote', 'Mettre en prod'],
+  // U+FE0E: the triangle as text, not as an emoji (iOS).
+  ['deployQa', '▶\uFE0E QA', 'Déployer en QA'],
+  ['promote', '▶\uFE0E Prod', 'Mettre en prod'],
 ];
-
-const HERE = { qa: 'qa', prod: 'prod', androidQa: 'android qa', androidProd: 'android prod' };
 
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
-    else if (k.startsWith('data-')) el.setAttribute(k, v);
+    else if (k.startsWith('data-') || k.startsWith('aria-')) el.setAttribute(k, v);
     else if (k in el) el[k] = v;
     else el.setAttribute(k, v);
   }
@@ -39,69 +42,87 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' });
-export function ago(iso, now = Date.now()) {
-  if (!iso) return '';
-  const s = (Date.parse(iso) - now) / 1000;
-  for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
-    if (Math.abs(s) >= size) return rtf.format(Math.round(s / size), unit);
+// Where a version is: QA and Prod, with 🌐 or 📱 when only the web or only Android is there.
+function chips(app, here) {
+  const out = [];
+  for (const [env, web, android] of [['qa', 'qa', 'androidQa'], ['prod', 'prod', 'androidProd']]) {
+    const w = here.includes(web);
+    const a = app.android && here.includes(android);
+    if (!w && !a) continue;
+    const both = w && (a || !app.android);
+    const label = `${env === 'qa' ? 'QA' : 'Prod'}${both ? '' : w ? ' 🌐' : ' 📱'}`;
+    out.push(h('span', { class: `chip ${env}` }, label));
   }
-  return 'à l’instant';
+  return out;
 }
 
-function stageCell(stage) {
-  const [icon, label] = STATE[stage.state] ?? STATE.none;
-  const text = stage.state === 'none' ? '—' : `${icon} ${label}`;
-  const content = stage.link ? h('a', { href: stage.link, target: '_blank', rel: 'noopener' }, text) : text;
+function stageCell(key, name, stage, now) {
+  const ms = elapsed(stage.start, stage.end, now);
+  const running = stage.state === 'running' || stage.state === 'waiting';
+  const time = ms == null ? '' : shortDuration(ms);
+  const tip = [
+    `${name} : ${STATE[stage.state] ?? stage.state}`,
+    ms == null ? '' : running ? ` depuis ${longDuration(ms)}` : ` en ${longDuration(ms)}`,
+    stage.versionCode != null ? ` (APK ${stage.versionCode})` : '',
+  ].join('');
   return h(
-    'td',
-    { class: `stage ${stage.state}` },
-    content,
-    stage.versionCode != null && stage.state !== 'none' ? h('span', { class: 'code', title: 'versionCode de l’APK' }, ` ${stage.versionCode}`) : null,
+    stage.link ? 'a' : 'span',
+    {
+      class: `cell ${stage.state}`,
+      href: stage.link ?? null,
+      target: stage.link ? '_blank' : null,
+      rel: stage.link ? 'noopener' : null,
+      title: tip,
+      'aria-label': tip,
+    },
+    h('span', { class: 'icon', 'aria-hidden': 'true' }),
+    // A running stage's time is updated every second (see main.js).
+    h('span', { class: 'time', 'data-since': running && stage.start ? stage.start : null }, time),
   );
 }
 
-function row(app, r) {
+function row(app, r, now) {
   return h(
-    'tr',
-    { class: r.here.length ? 'here' : '' },
+    'div',
+    { class: `row${r.here.length ? ' here' : ''}` },
     h(
-      'td',
-      { class: 'version' },
+      'div',
+      { class: 'line' },
       h('a', { class: 'sha', href: r.link, target: '_blank', rel: 'noopener' }, r.short),
-      r.here.map((env) => h('span', { class: `chip ${env}` }, HERE[env])),
-      h('div', { class: 'title', title: r.title }, r.title),
-      h('div', { class: 'date' }, ago(r.date)),
+      chips(app, r.here),
+      h('span', { class: 'title', title: r.title }, r.title),
+      h('span', { class: 'age', title: r.date ? new Date(r.date).toLocaleString('fr-BE') : '' }, age(r.date, now)),
     ),
-    COLUMNS.map(([key]) => stageCell(r.stages[key])),
     h(
-      'td',
-      { class: 'actions' },
+      'div',
+      { class: 'grid' },
+      COLUMNS.map(([key, , name]) => stageCell(key, name, r.stages[key], now)),
       h(
-        'div',
-        {},
-        ACTIONS.map(([key, label]) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            disabled: !r.actions[key].enabled,
-            title: r.actions[key].reason ?? '',
-            'data-action': key,
-            'data-repo': app.repo,
-            'data-android': app.android ? 'yes' : '',
-            'data-sha': r.sha,
-            'data-label': `${r.short} « ${r.title} »`,
-          },
-          label,
+        'span',
+        { class: 'actions' },
+        ACTIONS.map(([key, label, name]) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: r.actions[key].enabled ? 'go' : 'go off',
+              title: r.actions[key].enabled ? name : `${name} : ${r.actions[key].reason}`,
+              'aria-label': name,
+              'aria-disabled': r.actions[key].enabled ? null : 'true',
+              'data-action': key,
+              'data-repo': app.repo,
+              'data-sha': r.sha,
+              'data-reason': r.actions[key].reason ?? null,
+            },
+            label,
+          ),
         ),
       ),
-      ),
     ),
   );
 }
 
-export function appSection(app, result, error) {
+export function appSection(app, result, error, now = Date.now()) {
   const head = h(
     'h2',
     {},
@@ -116,26 +137,13 @@ export function appSection(app, result, error) {
     'section',
     { class: 'app' },
     head,
-    h(
-      'div',
-      { class: 'table' },
-      h(
-        'table',
-        {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Version'), COLUMNS.map(([, label, title]) => h('th', { title }, label)), h('th', {}, ''))),
-        h('tbody', {}, result.rows.map((r) => row(app, r))),
-      ),
-    ),
+    h('div', { class: 'grid legend', 'aria-hidden': 'true' }, COLUMNS.map(([, legend, name]) => h('span', { title: name }, legend)), h('span', {})),
+    result.rows.map((r) => row(app, r, now)),
   );
 }
 
-export function confirmText(action, label, android) {
-  return {
-    deployQa: android
-      ? `Déployer ${label} en qa ?\nLe web (s’il n’y est pas déjà), les tests d’acceptation, puis les APK : l’APK qa part aux testeurs.`
-      : `Déployer ${label} en qa ?\n(tests d’acceptation ensuite)`,
-    promote: android ? `Mettre ${label} en prod, web et Android ?` : `Mettre ${label} en prod ?`,
-  }[action];
+export function confirmText(action) {
+  return { deployQa: 'Déployer en QA ?', promote: 'Mettre en prod ?' }[action];
 }
 
 export const workflowOf = (action) => WORKFLOWS[action];

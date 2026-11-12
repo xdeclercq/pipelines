@@ -14,18 +14,11 @@
 <body>
   <header>
     <h1>Pipelines</h1>
-    <span id="updated"></span>
-    <button type="button" id="refresh">Actualiser</button>
-    <button type="button" id="forget" hidden>Oublier le jeton</button>
+    <span id="updated" title="Dernière mise à jour"></span>
+    <button type="button" id="refresh" title="Actualiser" aria-label="Actualiser">⟳</button>
   </header>
 
-  <p class="intro">
-    Chaque ligne est une version (un commit de <code>main</code>) et son avancée dans le pipeline :
-    les 3 dernières, et celles en qa et en prod. Chaque push passe seul l’étape de commit et
-    l’acceptation du web en qa ; « Déployer en qa » y ajoute l’app Android pour les testeurs, et
-    « Mettre en prod » publie web et Android. Une étape ne s’ouvre qu’aux versions qui ont passé
-    les précédentes.
-  </p>
+  <p id="message" hidden></p>
 
   <form id="token-form" hidden>
     <label for="token">Jeton GitHub</label>
@@ -39,7 +32,29 @@
     </p>
   </form>
 
-  <p id="message" hidden></p>
   <main id="apps"></main>
+
+  <footer>
+    <details>
+      <summary>Comment ça marche</summary>
+      <p>
+        Chaque ligne est une version (un commit de <code>main</code>) : les 3 dernières, et celles
+        en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
+        QA (tests d’acceptation compris) ; <strong>▶ QA</strong> y ajoute l’app Android pour les
+        testeurs ; <strong>▶ Prod</strong> publie web et Android. Une étape ne s’ouvre qu’aux
+        versions qui ont passé les précédentes ; un bouton grisé dit pourquoi quand on le touche.
+      </p>
+      <p class="keys">
+        <span class="cell success"><span class="icon"></span></span> réussi
+        <span class="cell failure"><span class="icon"></span></span> échec
+        <span class="cell running"><span class="icon"></span></span> en cours
+        <span class="cell waiting"><span class="icon"></span></span> en attente
+        <span class="cell cancelled"><span class="icon"></span></span> annulé
+        <span class="cell none"><span class="icon"></span></span> pas encore
+        — sous l’icône, la durée (ou le temps écoulé).
+      </p>
+      <button type="button" id="forget" hidden>Oublier le jeton</button>
+    </details>
+  </footer>
 </body>
 </html>

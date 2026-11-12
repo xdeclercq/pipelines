@@ -5,6 +5,7 @@ import { GitHub, ApiError } from './github.js';
 import { loadApp, newCache } from './load.js';
 import { pipeline } from './model.js';
 import { appSection, confirmText, workflowOf } from './view.js';
+import { shortDuration } from './format.js';
 
 const TOKEN_KEY = 'pipelines.token';
 const BUSY_EVERY = 15_000; // while something runs
@@ -20,11 +21,15 @@ function render() {
   $('apps').replaceChildren(...(gh ? state.map((s) => appSection(s.app, s.result, s.error)) : []));
 }
 
+let sayTimer = null;
+// A message under the header; information goes away by itself after a few seconds.
 function say(text, kind = 'info') {
   const el = $('message');
   el.textContent = text;
   el.className = kind;
   el.hidden = !text;
+  clearTimeout(sayTimer);
+  if (text && kind === 'info') sayTimer = setTimeout(() => (el.hidden = true), 6_000);
 }
 
 function askToken(reason) {
@@ -61,7 +66,7 @@ async function refresh({ force = false } = {}) {
         }
       }),
     );
-    $('updated').textContent = `à jour à ${new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    $('updated').textContent = new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
     render();
     const busy = state.some((s) => s.result?.busy);
     timer = setTimeout(() => !document.hidden && refresh(), busy ? BUSY_EVERY : IDLE_EVERY);
@@ -110,22 +115,33 @@ document.addEventListener('visibilitychange', () => {
 
 $('apps').addEventListener('click', async (e) => {
   const button = e.target.closest('button[data-action]');
-  if (!button || button.disabled || !gh) return;
-  const { action, repo, sha, label, android } = button.dataset;
-  if (!confirm(confirmText(action, label, android === 'yes'))) return;
+  if (!button || !gh) return;
+  // A greyed button says why when tapped (a phone shows no tooltip).
+  if (button.getAttribute('aria-disabled') === 'true') {
+    say(button.dataset.reason ?? '');
+    return;
+  }
+  const { action, repo, sha } = button.dataset;
+  if (!confirm(confirmText(action))) return;
   const workflow = workflowOf(action);
-  button.disabled = true;
+  button.setAttribute('aria-disabled', 'true');
   try {
     await gh.dispatch(repo, workflow.file, sha);
-    say(`« ${workflow.name} » lancé pour ${sha.slice(0, 7)}. Suivi ci-dessous dans quelques secondes.`);
+    say(`« ${workflow.name} » lancé pour ${sha.slice(0, 7)}.`);
     setTimeout(() => refresh(), 5_000);
   } catch (err) {
     say(err instanceof ApiError && err.status === 403
       ? 'Ce jeton ne peut pas lancer de workflow : il lui faut Actions en lecture et écriture.'
       : `Échec du lancement : ${err.message}`, 'error');
-    button.disabled = false;
+    button.removeAttribute('aria-disabled');
   }
 });
+
+// The time of what runs, every second.
+setInterval(() => {
+  const now = Date.now();
+  for (const el of document.querySelectorAll('[data-since]')) el.textContent = shortDuration(now - Date.parse(el.dataset.since));
+}, 1_000);
 
 const saved = localStorage.getItem(TOKEN_KEY);
 if (saved) start(saved);

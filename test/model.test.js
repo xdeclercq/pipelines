@@ -190,6 +190,24 @@ describe('the pipeline of a version', () => {
     assert.equal(a.stages.qa.state, 'waiting');
   });
 
+  test('each stage has its start and end, no end while it runs', () => {
+    const d = data();
+    d.jobs[3] = [
+      { ...job('test'), started_at: at(31), completed_at: at(34) },
+      { ...job('build'), started_at: at(31), completed_at: at(33) },
+      { ...job('deploy-qa / deploy'), started_at: at(34), completed_at: at(36) },
+    ];
+    d.deployments.qa[0] = deployment(13, A, 34, []);
+    d.deployments.qa[0].statuses = [{ state: 'success', log_url: 'log/13', created_at: at(36) }, { state: 'in_progress', created_at: at(34) }];
+    d.dispatchRuns = [{ ...dispatch('Deploy to qa', A, 40, 'in_progress', null), run_started_at: at(41) }];
+    const a = rowOf(pipeline(APP, d), A);
+    assert.deepEqual([a.stages.commit.start, a.stages.commit.end], [at(31), at(34)]);
+    assert.deepEqual([a.stages.androidQa.state, a.stages.androidQa.start, a.stages.androidQa.end], ['running', at(41), null]);
+    d.dispatchRuns = [];
+    const done = rowOf(pipeline(APP, d), A);
+    assert.deepEqual([done.stages.qa.start, done.stages.qa.end], [at(34), at(36)]);
+  });
+
   test('shows the 3 newest versions, and those in qa and prod however old', () => {
     const D = 'd'.repeat(40);
     const E = 'e'.repeat(40);
