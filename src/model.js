@@ -3,14 +3,14 @@
 //
 // Stages, in the order of the deployment pipeline:
 //   commit       Deliver's jobs "test" and "build" (tests, image built once)
-//   qa           deployed to qa and acceptance tests passed (deployment environment "qa")
-//   androidQa    manual test stage: qa APK sent to the testers (environment "android-qa")
+//   qa           web deployed to qa and acceptance tests passed (deployment environment "qa")
+//   androidQa    qa APK sent to the testers, by "Deploy to qa" (environment "android-qa")
 //   prod         web release (environment "prod")
 //   androidProd  Android release (environment "android-prod")
 //
 // A stage's state: success, failure, cancelled, running, waiting or none.
 
-import { WORKFLOWS } from './config.js';
+import { WORKFLOWS, RECENT } from './config.js';
 
 export const STAGES = ['commit', 'qa', 'androidQa', 'prod', 'androidProd'];
 
@@ -18,10 +18,14 @@ const STAGE_ENV = { qa: 'qa', androidQa: 'android-qa', prod: 'prod', androidProd
 // The workflow started by hand that moves a version into each stage.
 const STAGE_WORKFLOW = {
   qa: WORKFLOWS.deployQa.name,
-  androidQa: WORKFLOWS.testAndroid.name,
+  androidQa: WORKFLOWS.deployQa.name,
   prod: WORKFLOWS.promote.name,
   androidProd: WORKFLOWS.promote.name,
 };
+// The last stage each of those workflows reaches: where its failure shows when it left no
+// deployment saying more (refused at the start, or the APK build failed).
+const LAST_STAGE = (app, workflow) =>
+  workflow === WORKFLOWS.deployQa.name ? (app.android ? 'androidQa' : 'qa') : app.android ? 'androidProd' : 'prod';
 
 // State of a workflow run or job (same fields).
 export function runState(run) {
@@ -58,6 +62,7 @@ export function isFinal(statuses) {
 }
 
 const time = (iso) => (iso ? Date.parse(iso) : 0);
+const busy = (s) => s === 'running' || s === 'waiting';
 
 function combine(states) {
   if (states.includes('failure')) return 'failure';
@@ -82,8 +87,9 @@ function deploymentsOf(deployments, sha) {
 }
 
 // The newest of what happened to a version in a stage: its deployments, the runs started by hand
-// for it (named after its sha), and, for qa, the deploy job of Deliver.
-function stage(name, sha, data, deliverJob) {
+// for it (named after its sha) while they run, or that failed if it is their last stage, and, for
+// qa, the deploy job of Deliver.
+function stage(app, name, sha, data, deliverJob) {
   const events = [];
   for (const d of deploymentsOf(data.deployments[STAGE_ENV[name]], sha)) {
     const latest = d.statuses?.find((s) => s.state !== 'inactive') ?? d.statuses?.[0];
@@ -95,8 +101,10 @@ function stage(name, sha, data, deliverJob) {
     });
   }
   for (const r of data.dispatchRuns ?? []) {
-    if (r.name === STAGE_WORKFLOW[name] && (r.display_title ?? '').includes(sha)) {
-      events.push({ at: time(r.created_at), state: runState(r), link: r.html_url });
+    if (r.name !== STAGE_WORKFLOW[name] || !(r.display_title ?? '').includes(sha)) continue;
+    const state = runState(r);
+    if (busy(state) || ((state === 'failure' || state === 'cancelled') && LAST_STAGE(app, r.name) === name)) {
+      events.push({ at: time(r.created_at), state, link: r.html_url });
     }
   }
   if (deliverJob && runState(deliverJob) !== 'none') {
@@ -105,7 +113,6 @@ function stage(name, sha, data, deliverJob) {
   if (events.length === 0) return { state: 'none' };
   events.sort((a, b) => b.at - a.at);
   const newest = events[0];
-  // A run started by hand ends after the deployment it created: the deployment says more.
   return { state: newest.state, link: newest.link, versionCode: events.find((e) => e.versionCode != null)?.versionCode ?? null };
 }
 
@@ -119,8 +126,6 @@ function current(deployments, live) {
   return ok[0]?.sha ?? null;
 }
 
-const busy = (s) => s === 'running' || s === 'waiting';
-
 /**
  * data: {
  *   commits: [{ sha, commit: { message, author: { date } }, html_url }]   (newest first)
@@ -132,51 +137,55 @@ const busy = (s) => s === 'running' || s === 'waiting';
  * }
  * app: { android: boolean }
  */
-export function pipeline(app, data) {
-  const where = {
+// Where each environment is: { qa, prod, androidQa, androidProd } → sha or null.
+export function positions(data) {
+  return {
     qa: current(data.deployments.qa, data.live?.qa),
     prod: current(data.deployments.prod, data.live?.prod),
     androidQa: current(data.deployments['android-qa']),
     androidProd: current(data.deployments['android-prod']),
   };
-  const rows = data.commits.map((c) => {
+}
+
+// The versions shown: the RECENT newest commits, then those in qa or prod, newest first.
+export function shownCommits(commits, where) {
+  const placed = new Set(Object.values(where).filter(Boolean));
+  return commits.filter((c, i) => i < RECENT || placed.has(c.sha));
+}
+
+export function pipeline(app, data) {
+  const where = positions(data);
+  const rows = shownCommits(data.commits, where).map((c) => {
     const sha = c.sha;
     const run = (data.deliverRuns ?? []).find((r) => r.head_sha === sha);
     const jobs = run ? data.jobs?.[run.id] : null;
     const deliverQa = jobs?.find((j) => j.name.startsWith('deploy-qa'));
     const stages = {
       commit: commitStage(run, jobs),
-      qa: stage('qa', sha, data, deliverQa),
-      androidQa: stage('androidQa', sha, data),
-      prod: stage('prod', sha, data),
-      androidProd: stage('androidProd', sha, data),
+      qa: stage(app, 'qa', sha, data, deliverQa),
+      androidQa: stage(app, 'androidQa', sha, data),
+      prod: stage(app, 'prod', sha, data),
+      androidProd: stage(app, 'androidProd', sha, data),
     };
     // Deliver's deploy job only succeeds once the acceptance tests passed (and qa-<sha> is tagged),
     // also for the versions deployed before deployments were recorded.
     const accepted = everSucceeded(data.deployments.qa, sha) || runState(deliverQa) === 'success';
     const tested = everSucceeded(data.deployments['android-qa'], sha) || everSucceeded(data.deployments['android-prod'], sha);
+    const inQa = where.qa === sha && (!app.android || where.androidQa === sha);
     const actions = {
+      // Web then APKs: the workflow runs the acceptance tests itself before building the APKs.
       deployQa:
         stages.commit.state !== 'success'
           ? { enabled: false, reason: "L'étape de commit n'a pas réussi pour cette version." }
-          : where.qa === sha
-            ? { enabled: false, reason: 'Cette version est déjà en qa.' }
-            : busy(stages.qa.state)
-              ? { enabled: false, reason: 'Un déploiement en qa est en cours.' }
-              : { enabled: true },
-      testAndroid: !app.android
-        ? { enabled: false, reason: "Pas d'application Android." }
-        : !accepted
-          ? { enabled: false, reason: "Cette version n'a pas passé les tests d'acceptation en qa." }
-          : busy(stages.androidQa.state)
-            ? { enabled: false, reason: 'Les APK de cette version sont en cours de construction.' }
-            : where.androidQa === sha
-              ? { enabled: false, reason: 'Les testeurs ont déjà cette version.' }
+          : busy(stages.qa.state) || busy(stages.androidQa.state)
+            ? { enabled: false, reason: 'Un déploiement en qa est en cours.' }
+            : inQa
+              ? { enabled: false, reason: app.android ? 'Cette version est déjà en qa, web et Android.' : 'Cette version est déjà en qa.' }
               : { enabled: true },
       promote: !accepted
         ? { enabled: false, reason: "Cette version n'a pas passé les tests d'acceptation en qa." }
         : app.android && !tested
-          ? { enabled: false, reason: "Cette version n'a pas été testée sur Android." }
+          ? { enabled: false, reason: "L'APK qa de cette version n'a jamais été envoyé aux testeurs : déployez-la d'abord en qa." }
           : where.prod === sha && (!app.android || where.androidProd === sha)
             ? { enabled: false, reason: 'Cette version est déjà en prod.' }
             : busy(stages.prod.state) || busy(stages.androidProd.state)

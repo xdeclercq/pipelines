@@ -111,8 +111,8 @@ document.addEventListener('visibilitychange', () => {
 $('apps').addEventListener('click', async (e) => {
   const button = e.target.closest('button[data-action]');
   if (!button || button.disabled || !gh) return;
-  const { action, repo, sha, label } = button.dataset;
-  if (!confirm(confirmText(action, label))) return;
+  const { action, repo, sha, label, android } = button.dataset;
+  if (!confirm(confirmText(action, label, android === 'yes'))) return;
   const workflow = workflowOf(action);
   button.disabled = true;
   try {

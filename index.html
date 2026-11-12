@@ -21,8 +21,10 @@
 
   <p class="intro">
     Chaque ligne est une version (un commit de <code>main</code>) et son avancée dans le pipeline :
-    l’étape de commit et l’acceptation en qa sont automatiques à chaque push ; le test sur Android et
-    la mise en prod se lancent ici. Une étape ne s’ouvre qu’aux versions qui ont passé les précédentes.
+    les 3 dernières, et celles en qa et en prod. Chaque push passe seul l’étape de commit et
+    l’acceptation du web en qa ; « Déployer en qa » y ajoute l’app Android pour les testeurs, et
+    « Mettre en prod » publie web et Android. Une étape ne s’ouvre qu’aux versions qui ont passé
+    les précédentes.
   </p>
 
   <form id="token-form" hidden>

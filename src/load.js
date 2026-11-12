@@ -2,7 +2,7 @@
 // finished run, the statuses of a finished deployment) is kept in `cache` between refreshes.
 
 import { ENVIRONMENTS, COMMITS } from './config.js';
-import { isFinal } from './model.js';
+import { isFinal, positions, shownCommits } from './model.js';
 
 // Deployments per environment whose statuses are read: the newest ones are enough to place the
 // versions shown.
@@ -62,25 +62,30 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
     }),
   );
 
-  const shown = new Set(commits.map((c) => c.sha));
+  const newest = (env) => {
+    const d = deployments[env][0];
+    return d ? { id: d.id, state: d.statuses[0]?.state } : null;
+  };
+  const [qa, prod] = await Promise.all([liveRevision(app.qa, newest('qa'), cache, force), liveRevision(app.prod, newest('prod'), cache, force)]);
+  const live = { qa, prod };
+
+  // The versions in place, even when older than the commits read.
+  const read = new Set(commits.map((c) => c.sha));
+  const where = positions({ deployments, live });
+  for (const sha of new Set(Object.values(where))) {
+    if (!sha || !/^[0-9a-f]{40}$/.test(sha) || read.has(sha)) continue;
+    if (!cache.commits.has(sha)) cache.commits.set(sha, await gh.get(`/repos/${r}/commits/${sha}`));
+    commits.push(cache.commits.get(sha));
+    read.add(sha);
+  }
+
+  // Jobs of Deliver, only for the versions shown.
+  const shown = new Set(shownCommits(commits, where).map((c) => c.sha));
   const runs = deliver.workflow_runs;
   const firstRun = new Map();
   for (const run of runs) if (shown.has(run.head_sha) && !firstRun.has(run.head_sha)) firstRun.set(run.head_sha, run);
   const jobs = {};
   await Promise.all([...firstRun.values()].map(async (run) => (jobs[run.id] = await jobsOf(gh, r, run, cache))));
 
-  const newest = (env) => {
-    const d = deployments[env][0];
-    return d ? { id: d.id, state: d.statuses[0]?.state } : null;
-  };
-  const [qa, prod] = await Promise.all([liveRevision(app.qa, newest('qa'), cache, force), liveRevision(app.prod, newest('prod'), cache, force)]);
-
-  // The versions in place, even when older than the commits shown.
-  const missing = [qa, prod].filter((sha) => sha && /^[0-9a-f]{40}$/.test(sha) && !shown.has(sha));
-  for (const sha of new Set(missing)) {
-    if (!cache.commits.has(sha)) cache.commits.set(sha, await gh.get(`/repos/${r}/commits/${sha}`));
-    commits.push(cache.commits.get(sha));
-  }
-
-  return { commits, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, live: { qa, prod } };
+  return { commits, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, live };
 }

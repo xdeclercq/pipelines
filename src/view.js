@@ -13,15 +13,14 @@ const STATE = {
 
 const COLUMNS = [
   ['commit', 'Commit', 'Tests et image, à chaque push sur main'],
-  ['qa', 'Acceptation', 'Déployée en qa, tests d’acceptation passés'],
-  ['androidQa', 'Test Android', 'APK qa envoyé aux testeurs (groupe Firebase « qa »)'],
+  ['qa', 'qa web', 'Déployée en qa, tests d’acceptation passés (automatique à chaque push)'],
+  ['androidQa', 'qa Android', 'APK qa envoyé aux testeurs (groupe Firebase « qa ») par « Déployer en qa »'],
   ['prod', 'Prod web', 'Image en prod'],
   ['androidProd', 'Prod Android', 'APK prod envoyé au groupe « family »'],
 ];
 
 const ACTIONS = [
   ['deployQa', 'Déployer en qa'],
-  ['testAndroid', 'Tester sur Android'],
   ['promote', 'Mettre en prod'],
 ];
 
@@ -81,7 +80,7 @@ function row(app, r) {
       h(
         'div',
         {},
-        ACTIONS.filter(([key]) => app.android || key !== 'testAndroid').map(([key, label]) =>
+        ACTIONS.map(([key, label]) =>
         h(
           'button',
           {
@@ -90,6 +89,7 @@ function row(app, r) {
             title: r.actions[key].reason ?? '',
             'data-action': key,
             'data-repo': app.repo,
+            'data-android': app.android ? 'yes' : '',
             'data-sha': r.sha,
             'data-label': `${r.short} « ${r.title} »`,
           },
@@ -129,11 +129,12 @@ export function appSection(app, result, error) {
   );
 }
 
-export function confirmText(action, label) {
+export function confirmText(action, label, android) {
   return {
-    deployQa: `Déployer ${label} en qa ?\n(tests d’acceptation ensuite)`,
-    testAndroid: `Construire les APK qa et prod de ${label} et envoyer l’APK qa aux testeurs ?`,
-    promote: `Mettre ${label} en prod, web et Android ?`,
+    deployQa: android
+      ? `Déployer ${label} en qa ?\nLe web (s’il n’y est pas déjà), les tests d’acceptation, puis les APK : l’APK qa part aux testeurs.`
+      : `Déployer ${label} en qa ?\n(tests d’acceptation ensuite)`,
+    promote: android ? `Mettre ${label} en prod, web et Android ?` : `Mettre ${label} en prod ?`,
   }[action];
 }
 

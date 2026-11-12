@@ -8,12 +8,13 @@ commit stage to prod, web and Android, with the buttons that move it on.
 | Stage | Started | What it does |
 | --- | --- | --- |
 | Commit | each push to `main` (Deliver) | tests; the Docker image built once |
-| Acceptance | right after (Deliver), or *Déployer en qa* | that image deployed to qa, its commit checked, acceptance tests run on it |
-| Test Android | *Tester sur Android* | qa and prod APKs built together; the qa one sent to the Firebase group `qa` |
+| qa web | right after (Deliver), at each push | that image deployed to qa, its commit checked, acceptance tests run on it |
+| qa web + Android | *Déployer en qa* | the web as above (skipped if qa already runs that version, accepted), then the qa and prod APKs built together; the qa one sent to the Firebase group `qa` |
 | Prod web + Android | *Mettre en prod* | the same image in prod; the prod APK built with the tested one sent to the group `family` |
 
 A button is enabled only for the versions that passed the previous stages, and each workflow
-checks it again on its side. The rules, the workflows and the rollback are described in the
+checks it again on its side. Each application shows its 3 newest versions, and the versions in qa
+and in prod (web or Android) however old. The rules, the workflows and the rollback are described in the
 README of each application ("Deployment pipeline").
 
 ## Using it
@@ -37,7 +38,7 @@ comes back to the foreground.
 This repository is public, the applications' repositories are private. The page has no rights of
 its own: every call goes to GitHub with the visitor's token, so someone without access to the
 private repositories sees nothing and starts nothing. In addition, the workflows started by hand
-(*Deploy to qa*, *Test on Android*, *Promote to prod*) stop at once unless started by the
+(*Deploy to qa*, *Promote to prod*) stop at once unless started by the
 repository owner.
 
 Against a stolen token: the page loads no third-party script, its Content-Security-Policy only

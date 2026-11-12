@@ -90,23 +90,29 @@ describe('the pipeline of a version', () => {
   test('opens a stage only to the versions that passed the previous ones', () => {
     const p = pipeline(APP, data());
     const a = rowOf(p, A);
-    assert.equal(a.actions.deployQa.enabled, false, 'already in qa');
-    assert.equal(a.actions.testAndroid.enabled, true);
+    assert.equal(a.actions.deployQa.enabled, true, 'web in qa, but not yet on Android');
     assert.equal(a.actions.promote.enabled, false);
-    assert.match(a.actions.promote.reason, /pas été testée sur Android/);
+    assert.match(a.actions.promote.reason, /jamais été envoyé aux testeurs/);
     const b = rowOf(p, B);
     assert.equal(b.actions.deployQa.enabled, true, 'back to an earlier version in qa');
-    assert.equal(b.actions.testAndroid.enabled, false, 'testers already have it');
     assert.equal(b.actions.promote.enabled, true);
     const c = rowOf(p, C);
     assert.equal(c.actions.promote.enabled, false);
     assert.match(c.actions.promote.reason, /déjà en prod/);
   });
 
-  test('without Android, prod only needs the acceptance stage', () => {
+  test('a version in qa, web and Android, cannot be deployed there again', () => {
+    const d = data();
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success'], { version_code: 460000 }));
+    const a = rowOf(pipeline(APP, d), A);
+    assert.equal(a.actions.deployQa.enabled, false);
+    assert.match(a.actions.deployQa.reason, /web et Android/);
+  });
+
+  test('without Android, qa and prod are the web alone', () => {
     const p = pipeline({ android: false }, data());
     assert.equal(rowOf(p, A).actions.promote.enabled, true);
-    assert.equal(rowOf(p, A).actions.testAndroid.enabled, false);
+    assert.equal(rowOf(p, A).actions.deployQa.enabled, false, 'already in qa');
   });
 
   test('failed tests stop the line', () => {
@@ -119,7 +125,7 @@ describe('the pipeline of a version', () => {
     assert.equal(a.stages.commit.link, 'job/test');
     assert.equal(a.stages.qa.state, 'none');
     assert.equal(a.actions.deployQa.enabled, false);
-    assert.equal(a.actions.testAndroid.enabled, false);
+    assert.equal(a.actions.promote.enabled, false);
   });
 
   test('a version refused by its acceptance tests runs in qa but goes no further', () => {
@@ -130,7 +136,7 @@ describe('the pipeline of a version', () => {
     const a = rowOf(p, A);
     assert.equal(a.stages.qa.state, 'failure');
     assert.deepEqual(a.here, ['qa'], 'the app says it runs A');
-    assert.equal(a.actions.testAndroid.enabled, false);
+    assert.equal(a.actions.promote.enabled, false);
   });
 
   test('without the app answering, qa is the newest deployment that succeeded', () => {
@@ -141,15 +147,23 @@ describe('the pipeline of a version', () => {
     assert.equal(p.where.prod, C);
   });
 
-  test('a run started by hand shows until its deployment exists, then a refusal shows', () => {
-    const running = pipeline(APP, data({ dispatchRuns: [dispatch('Test on Android', A, 40, 'in_progress', null)] }));
+  test('a run started by hand shows while it runs, and its failure on its last stage', () => {
+    const running = pipeline(APP, data({ dispatchRuns: [dispatch('Deploy to qa', A, 40, 'in_progress', null)] }));
+    assert.equal(rowOf(running, A).stages.qa.state, 'running');
     assert.equal(rowOf(running, A).stages.androidQa.state, 'running');
-    assert.equal(rowOf(running, A).actions.testAndroid.enabled, false);
+    assert.equal(rowOf(running, A).actions.deployQa.enabled, false);
     assert.equal(running.busy, true);
 
+    // The web was already in qa (skipped), the APK build failed: Android shows it, the web does not.
+    const failed = pipeline(APP, data({ dispatchRuns: [dispatch('Deploy to qa', A, 40, 'completed', 'failure')] }));
+    assert.equal(rowOf(failed, A).stages.qa.state, 'success');
+    assert.equal(rowOf(failed, A).stages.androidQa.state, 'failure');
+    assert.equal(rowOf(failed, A).stages.androidQa.link, 'dispatch/Deploy to qa/40');
+
     const refused = pipeline(APP, data({ dispatchRuns: [dispatch('Promote to prod', A, 40, 'completed', 'failure')] }));
-    assert.equal(rowOf(refused, A).stages.prod.state, 'failure');
-    assert.equal(rowOf(refused, A).stages.prod.link, 'dispatch/Promote to prod/40');
+    assert.equal(rowOf(refused, A).stages.androidProd.state, 'failure');
+    assert.equal(rowOf(refused, A).stages.androidProd.link, 'dispatch/Promote to prod/40');
+    assert.equal(rowOf(refused, A).stages.prod.state, 'none');
     assert.equal(rowOf(refused, B).stages.prod.state, 'none', 'another version is not concerned');
   });
 
@@ -158,9 +172,11 @@ describe('the pipeline of a version', () => {
     const b = rowOf(pipeline(APP, d), B);
     assert.equal(b.stages.qa.state, 'running');
     assert.equal(b.actions.deployQa.enabled, false);
-    d.deployments.qa.unshift(deployment(14, B, 51, ['in_progress']));
-    d.dispatchRuns[0] = dispatch('Deploy to qa', B, 50, 'completed', 'success');
-    assert.equal(rowOf(pipeline(APP, d), B).stages.qa.state, 'running', 'the deployment is newer than its run');
+    d.deployments.qa.unshift(deployment(14, B, 51, ['failure']));
+    d.dispatchRuns[0] = dispatch('Deploy to qa', B, 50, 'completed', 'failure');
+    const b2 = rowOf(pipeline(APP, d), B);
+    assert.equal(b2.stages.qa.state, 'failure', 'its deployment says the web failed');
+    assert.equal(b2.stages.qa.link, 'log/14');
   });
 
   test('Deliver deploying to qa shows before its deployment is recorded', () => {
@@ -172,6 +188,22 @@ describe('the pipeline of a version', () => {
     const a = rowOf(pipeline(APP, d), A);
     assert.equal(a.stages.commit.state, 'success');
     assert.equal(a.stages.qa.state, 'waiting');
+  });
+
+  test('shows the 3 newest versions, and those in qa and prod however old', () => {
+    const D = 'd'.repeat(40);
+    const E = 'e'.repeat(40);
+    const F = 'f'.repeat(40);
+    const d = data();
+    d.commits = [commit(F, 60), commit(E, 50), commit(D, 40), ...d.commits];
+    const p = pipeline(APP, d);
+    assert.deepEqual(p.rows.map((r) => r.short[0]), ['f', 'e', 'd', 'a', 'b', 'c'], 'A in qa, B android qa, C prod');
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']));
+    assert.deepEqual(pipeline(APP, d).rows.map((r) => r.short[0]), ['f', 'e', 'd', 'a', 'c']);
+    d.live = { qa: E, prod: E };
+    d.deployments['android-qa'][0] = deployment(23, E, 55, ['success']);
+    d.deployments['android-prod'].unshift(deployment(42, E, 56, ['success']));
+    assert.deepEqual(pipeline(APP, d).rows.map((r) => r.short[0]), ['f', 'e', 'd']);
   });
 
   test('a version tested on Android stays promotable after a newer one is tested', () => {
@@ -186,6 +218,7 @@ describe('the pipeline of a version', () => {
     d.deployments.qa = d.deployments.qa.filter((x) => x.sha !== A);
     const a = rowOf(pipeline(APP, d), A);
     assert.equal(a.stages.qa.state, 'success');
-    assert.equal(a.actions.testAndroid.enabled, true);
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']));
+    assert.equal(rowOf(pipeline(APP, d), A).actions.promote.enabled, true);
   });
 });
