@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Only this site's own files run; only GitHub's API and the apps' status are contacted. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com https://tabula-qa.fly.dev https://tabula-prod.fly.dev https://outsmart-qa.fly.dev https://outsmart-prod.fly.dev; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Pipelines</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Pipelines</h1>
+    <span id="updated"></span>
+    <button type="button" id="refresh">Actualiser</button>
+    <button type="button" id="forget" hidden>Oublier le jeton</button>
+  </header>
+
+  <p class="intro">
+    Chaque ligne est une version (un commit de <code>main</code>) et son avancée dans le pipeline :
+    l’étape de commit et l’acceptation en qa sont automatiques à chaque push ; le test sur Android et
+    la mise en prod se lancent ici. Une étape ne s’ouvre qu’aux versions qui ont passé les précédentes.
+  </p>
+
+  <form id="token-form" hidden>
+    <label for="token">Jeton GitHub</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+    <button type="submit">Enregistrer</button>
+    <p class="help">
+      Un jeton <em>fine-grained</em> (GitHub → Settings → Developer settings → Fine-grained tokens),
+      limité aux dépôts <code>tabula</code> et <code>outsmart</code>, avec une date d’expiration et
+      les permissions <strong>Actions : lecture et écriture</strong>, <strong>Contents : lecture</strong>,
+      <strong>Deployments : lecture</strong>. Il reste dans ce navigateur et n’est envoyé qu’à GitHub.
+    </p>
+  </form>
+
+  <p id="message" hidden></p>
+  <main id="apps"></main>
+</body>
+</html>

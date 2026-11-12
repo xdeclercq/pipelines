@@ -1,0 +1,10 @@
+{
+  "name": "pipelines",
+  "private": true,
+  "description": "Deployment pipelines of Tabula and Outsmart: a static page on GitHub Pages.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED"
+}
