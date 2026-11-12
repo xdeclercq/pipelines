@@ -24,8 +24,9 @@ const COLUMNS = [
   ['androidProd', 'Prod 📱', 'Prod Android (APK envoyé au groupe family)'],
 ];
 
-// The stages each button starts; it shows in the first one not reached yet, or else (a version
-// deployed again) in the last one.
+// The stages each button starts; it shows in the first one not reached yet, or that failed (to try
+// again), never over a stage that went well: a version already deployed is not offered again here
+// (going back to it: Actions → the workflow → Run workflow).
 const ACTION_STAGES = (app) => ({
   deployQa: app.android ? ['qa', 'androidQa'] : ['qa'],
   promote: app.android ? ['prod', 'androidProd'] : ['prod'],
@@ -95,7 +96,7 @@ function button(app, r, key, label, name, stage) {
     'button',
     {
       type: 'button',
-      class: `go was-${stage.state}`,
+      class: `go was-${stage.state}`, // a failure frames it in red
       title: `${name}${was}`,
       'aria-label': `${name}${was}`,
       'data-action': key,
@@ -111,7 +112,8 @@ function row(app, r, now) {
   for (const [key, label, name] of ACTIONS) {
     if (!r.actions[key].enabled) continue;
     const stages = ACTION_STAGES(app)[key];
-    slots[stages.find((st) => r.stages[st].state === 'none') ?? stages.at(-1)] = [key, label, name];
+    const slot = stages.find((st) => ['none', 'failure', 'cancelled'].includes(r.stages[st].state));
+    if (slot) slots[slot] = [key, label, name];
   }
   return h(
     'div',

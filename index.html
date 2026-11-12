@@ -42,8 +42,9 @@
         en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
         QA (tests d’acceptation compris) ; <strong>▶ QA</strong> y ajoute l’app Android pour les
         testeurs ; <strong>▶ Prod</strong> publie web et Android. Un bouton n’apparaît que pour
-        une version qui a passé les étapes précédentes, à la place de l’étape qu’il lance ; s’il
-        remplace une étape déjà faite (redéploiement), son cadre en garde la couleur.
+        une version qui a passé les étapes précédentes, à la place de l’étape qu’il lance : pas
+        encore faite, ou en échec (cadre rouge, pour réessayer). Revenir à une version déjà
+        déployée se fait dans GitHub : Actions → le workflow → Run workflow, avec son sha.
       </p>
       <p class="keys">
         <span class="cell success"><span class="icon"></span></span> réussi

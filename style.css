@@ -73,8 +73,7 @@ h2 a { font-size: .8rem; font-weight: normal; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .running .icon { animation: none; } }
 
 .go { justify-self: center; padding: .2rem .45rem; font-size: .8rem; font-weight: 600; white-space: nowrap; border-width: 1.5px; }
-/* Deployed again: the frame keeps the colour of how it went last time. */
-.go.was-success { border-color: var(--success); }
+/* In place of a stage that failed: try again. */
 .go.was-failure { border-color: var(--failure); }
 
 footer { margin-top: 1rem; font-size: .85rem; display: flex; flex-direction: column; align-items: flex-start; gap: .6rem; }
