@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Only this site's own files run; only GitHub's API and the apps' status are contacted. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com https://tabula-qa.fly.dev https://tabula-prod.fly.dev https://outsmart-qa.fly.dev https://outsmart-prod.fly.dev; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com https://tabula-qa.fly.dev https://tabula-prod.fly.dev https://outsmart-qa.fly.dev https://outsmart-prod.fly.dev https://ticket-scanner-6a1b3e-qa.fly.dev https://ticket-scanner-6a1b3e-prod.fly.dev; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Pipelines</title>
   <link rel="icon" href="data:,">
@@ -13,7 +13,8 @@
 </head>
 <body>
   <header>
-    <h1>Pipelines</h1>
+    <h1 class="sr-only">Pipelines</h1>
+    <select id="view" aria-label="Application"></select>
     <span id="updated" title="Dernière mise à jour"></span>
     <button type="button" id="refresh" title="Actualiser" aria-label="Actualiser">⟳</button>
   </header>
@@ -26,7 +27,7 @@
     <button type="submit">Enregistrer</button>
     <p class="help">
       Un jeton <em>fine-grained</em> (GitHub → Settings → Developer settings → Fine-grained tokens),
-      limité aux dépôts <code>tabula</code> et <code>outsmart</code>, avec une date d’expiration et
+      limité aux dépôts <code>tabula</code>, <code>outsmart</code> et <code>ticket-scanner</code>, avec une date d’expiration et
       les permissions <strong>Actions : lecture et écriture</strong>, <strong>Contents : lecture</strong>,
       <strong>Deployments : lecture</strong>. Il reste dans ce navigateur et n’est envoyé qu’à GitHub.
     </p>
@@ -38,8 +39,10 @@
     <details>
       <summary>Comment ça marche</summary>
       <p>
-        Chaque ligne est une version (un commit de <code>main</code>) : les 3 dernières, et celles
-        en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
+        La <strong>vue d’ensemble</strong> donne, pour chaque appli, la version en QA et en prod
+        (web 🌐, Android 📱) : ✓ si elle est à jour avec <code>main</code>, sinon son retard en
+        commits (−3) ; le nom ouvre son pipeline. Dans le pipeline d’une appli, chaque ligne est
+        une version (un commit de <code>main</code>) : les 3 dernières, et celles en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
         QA (tests d’acceptation compris) ; <strong>▶ QA</strong> y ajoute l’app Android pour les
         testeurs ; <strong>▶ Prod</strong> publie web et Android. Un bouton n’apparaît que pour
         une version qui a passé les étapes précédentes, à la place de l’étape qu’il lance : pas

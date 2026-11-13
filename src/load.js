@@ -70,6 +70,7 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
   const live = { qa, prod };
 
   // The versions in place, even when older than the commits read.
+  const recent = commits.length;
   const read = new Set(commits.map((c) => c.sha));
   const where = positions({ deployments, live });
   for (const sha of new Set(Object.values(where))) {
@@ -95,5 +96,5 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
       .map(async (run) => (dispatchJobs[run.id] = await jobsOf(gh, r, run, cache))),
   );
 
-  return { commits, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, dispatchJobs, live };
+  return { commits, recent, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, dispatchJobs, live };
 }

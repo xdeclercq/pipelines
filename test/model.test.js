@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { pipeline, deploymentState, runState } from '../src/model.js';
+import { pipeline, deploymentState, runState, summary } from '../src/model.js';
 
 const A = 'a'.repeat(40); // newest commit
 const B = 'b'.repeat(40);
@@ -257,5 +257,29 @@ describe('the pipeline of a version', () => {
     assert.equal(a.stages.qa.state, 'success');
     d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']));
     assert.equal(rowOf(pipeline(APP, d), A).actions.promote.enabled, true);
+  });
+});
+
+describe('the overview', () => {
+  test('the version of each environment, and how far behind main', () => {
+    const d = data();
+    d.recent = 3;
+    const o = summary(APP, d);
+    assert.deepEqual(o.head, { sha: A, short: 'aaaaaaa' });
+    assert.deepEqual(o.envs.qa, { sha: A, short: 'aaaaaaa', behind: 0 });
+    assert.deepEqual(o.envs.androidQa, { sha: B, short: 'bbbbbbb', behind: 1 });
+    assert.deepEqual(o.envs.prod, { sha: C, short: 'ccccccc', behind: 2 });
+    assert.equal(o.read, 3);
+    assert.equal(o.busy, false);
+  });
+
+  test('a version older than the commits read, and an environment with nothing', () => {
+    const d = data();
+    d.recent = 2; // C was fetched on its own, being in prod
+    d.deployments['android-prod'] = [];
+    const o = summary(APP, d);
+    assert.equal(o.envs.prod.behind, null);
+    assert.equal(o.envs.androidProd, null);
+    assert.equal(summary({ android: false }, d).envs.androidQa, null);
   });
 });

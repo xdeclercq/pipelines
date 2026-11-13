@@ -1,25 +1,63 @@
-// Entry point: the token, the refresh loop and the buttons.
+// Entry point: the token, the menu, the refresh loop and the buttons.
 
-import { APPS } from './config.js';
+import { APPS, keyOf } from './config.js';
 import { GitHub, ApiError } from './github.js';
 import { loadApp, newCache } from './load.js';
-import { pipeline } from './model.js';
-import { appSection, confirmText, workflowOf } from './view.js';
+import { pipeline, summary } from './model.js';
+import { appSection, overview, confirmText, workflowOf } from './view.js';
 import { shortDuration } from './format.js';
 
 const TOKEN_KEY = 'pipelines.token';
+const VIEW_KEY = 'pipelines.view';
+const OVERVIEW = 'apercu';
 const BUSY_EVERY = 15_000; // while something runs
 const IDLE_EVERY = 120_000;
 
 const $ = (id) => document.getElementById(id);
-const state = APPS.map((app) => ({ app, cache: newCache(), result: null, error: null }));
+const state = APPS.map((app) => ({ app, cache: newCache(), result: null, summary: null, error: null }));
 let gh = null;
 let timer = null;
 let loading = false;
 
-function render() {
-  $('apps').replaceChildren(...(gh ? state.map((s) => appSection(s.app, s.result, s.error)) : []));
+// The view shown: the overview, or one application (#tabula). The address wins, then the last
+// choice, then the overview.
+const views = [OVERVIEW, ...APPS.map(keyOf)];
+function currentView() {
+  const fromHash = decodeURIComponent(location.hash.slice(1));
+  if (views.includes(fromHash)) return fromHash;
+  const saved = localStorage.getItem(VIEW_KEY);
+  return views.includes(saved) ? saved : OVERVIEW;
 }
+
+function menu() {
+  const select = $('view');
+  select.replaceChildren(
+    new Option('Vue d’ensemble', OVERVIEW),
+    ...APPS.map((app) => new Option(app.name, keyOf(app))),
+  );
+  select.value = currentView();
+}
+
+function render() {
+  if (!gh) return $('apps').replaceChildren();
+  const view = currentView();
+  $('view').value = view;
+  if (view === OVERVIEW) return $('apps').replaceChildren(overview(state));
+  const s = state.find((x) => keyOf(x.app) === view);
+  $('apps').replaceChildren(appSection(s.app, s.result, s.error));
+}
+
+$('view').addEventListener('change', () => {
+  const view = $('view').value;
+  localStorage.setItem(VIEW_KEY, view);
+  location.hash = view === OVERVIEW ? '' : view;
+  render();
+});
+window.addEventListener('hashchange', () => {
+  const view = currentView();
+  localStorage.setItem(VIEW_KEY, view);
+  render();
+});
 
 let sayTimer = null;
 // A message under the header; information goes away by itself after a few seconds.
@@ -58,7 +96,9 @@ async function refresh({ force = false } = {}) {
     await Promise.all(
       state.map(async (s) => {
         try {
-          s.result = pipeline(s.app, await loadApp(gh, s.app, s.cache, { force }));
+          const data = await loadApp(gh, s.app, s.cache, { force });
+          s.result = pipeline(s.app, data);
+          s.summary = summary(s.app, data, s.result);
           s.error = null;
         } catch (err) {
           if (err instanceof ApiError && err.status === 401) throw err;
@@ -100,6 +140,7 @@ $('forget').addEventListener('click', () => {
   localStorage.removeItem(TOKEN_KEY);
   state.forEach((s) => {
     s.result = null;
+    s.summary = null;
     s.error = null;
     s.cache = newCache();
   });
@@ -140,6 +181,7 @@ setInterval(() => {
   for (const el of document.querySelectorAll('[data-since]')) el.textContent = shortDuration(now - Date.parse(el.dataset.since));
 }, 1_000);
 
+menu();
 const saved = localStorage.getItem(TOKEN_KEY);
 if (saved) start(saved);
 else askToken();

@@ -1,9 +1,14 @@
 # Pipelines
 
-The deployment pipelines of [Tabula](https://github.com/xdeclercq/tabula) and
-[Outsmart](https://github.com/xdeclercq/outsmart) on one page, as *Continuous Delivery*
-(Humble and Farley) recommends: each version (commit of `main`) and how far it went, from the
-commit stage to prod, web and Android, with the buttons that move it on.
+The deployment pipelines of [Tabula](https://github.com/xdeclercq/tabula),
+[Outsmart](https://github.com/xdeclercq/outsmart) and
+[Ticket Scanner](https://github.com/xdeclercq/ticket-scanner) on one page, as *Continuous
+Delivery* (Humble and Farley) recommends: each version (commit of `main`) and how far it went,
+from the commit stage to prod, web and Android, with the buttons that move it on.
+
+A menu shows one application at a time, or the **overview**: per application, the version that
+runs in QA and in prod (web 🌐, Android 📱), with ✓ when it is the newest commit of `main`, else
+how many commits it is behind (−3). The choice is kept, and in the address (`#tabula`).
 
 | Stage | Started | What it does |
 | --- | --- | --- |
@@ -27,7 +32,8 @@ README of each application ("Deployment pipeline").
 1. Open the page (GitHub Pages of this repository).
 2. Paste a GitHub token, once: a **fine-grained token** (GitHub → Settings → Developer settings →
    Personal access tokens → Fine-grained tokens) with
-   - *Repository access*: only `xdeclercq/tabula` and `xdeclercq/outsmart`;
+   - *Repository access*: only `xdeclercq/tabula`, `xdeclercq/outsmart` and
+     `xdeclercq/ticket-scanner`;
    - *Permissions*: **Actions** read and write (to start the workflows), **Contents** read (the
      commits), **Deployments** read;
    - an expiration date.

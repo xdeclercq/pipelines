@@ -24,6 +24,7 @@
   }
 }
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 * { box-sizing: border-box; }
 body { margin: 0 auto; padding: .5rem .75rem 1rem; max-width: 760px; color: var(--fg); background: var(--bg); }
 a { color: inherit; }
@@ -80,3 +81,23 @@ footer { margin-top: 1rem; font-size: .85rem; display: flex; flex-direction: col
 footer p { margin: .4rem 0; }
 .keys .cell { display: inline-flex; vertical-align: middle; margin-left: .5rem; }
 .keys .cell:first-child { margin-left: 0; }
+
+/* Menu */
+#view { font: inherit; font-size: 1.1rem; font-weight: 700; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; margin-right: auto; max-width: 60vw; }
+#view option { color: initial; }
+
+/* Overview: the application, then QA 🌐, QA 📱, Prod 🌐, Prod 📱. */
+.ogrid { display: grid; grid-template-columns: minmax(5.5rem, 1.4fr) repeat(4, minmax(0, 1fr)); align-items: center; column-gap: .25rem; }
+.overview { margin-top: .8rem; }
+.orow { padding: .45rem .25rem; border-bottom: 1px solid var(--line); }
+.oapp { display: flex; flex-direction: column; text-decoration: none; min-width: 0; }
+.oname { font-weight: 600; display: flex; align-items: center; gap: .3rem; }
+.ohead { font-size: .72rem; color: var(--muted); font-family: ui-monospace, monospace; }
+.oerror { grid-column: 2 / -1; font-size: .8rem; }
+.version { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.version.none { color: var(--muted); }
+.vsha { font-family: ui-monospace, monospace; font-size: .75rem; }
+.badge { font-size: .72rem; font-weight: 700; padding: 0 .35rem; border-radius: 1rem; color: #fff; }
+.fresh .badge { background: var(--success); }
+.late .badge { background: var(--running); }
+.cell.mini .icon { --icon: .7rem; border-width: 2px; }

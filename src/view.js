@@ -3,7 +3,7 @@
 // the stage it starts. Text from GitHub (commit messages)
 // only ever goes through textContent.
 
-import { WORKFLOWS } from './config.js';
+import { WORKFLOWS, keyOf } from './config.js';
 import { shortDuration, longDuration, elapsed, age } from './format.js';
 
 const STATE = {
@@ -21,7 +21,7 @@ const COLUMNS = [
   ['qa', 'QA 🌐', 'QA web (déploiement et tests d’acceptation)'],
   ['androidQa', 'QA 📱', 'QA Android (APK envoyé aux testeurs)'],
   ['prod', 'Prod 🌐', 'Prod web'],
-  ['androidProd', 'Prod 📱', 'Prod Android (APK envoyé au groupe family)'],
+  ['androidProd', 'Prod 📱', 'Prod Android (APK publié)'],
 ];
 
 // The stages each button starts; it shows in the first one not reached yet, or that failed (to try
@@ -140,7 +140,7 @@ export function appSection(app, result, error, now = Date.now()) {
   const head = h(
     'h2',
     {},
-    app.name,
+    h('span', { class: 'sr-only' }, app.name), // the menu shows it
     h('a', { href: app.qa, target: '_blank', rel: 'noopener' }, 'qa'),
     h('a', { href: app.prod, target: '_blank', rel: 'noopener' }, 'prod'),
     h('a', { href: `https://github.com/${app.repo}/actions`, target: '_blank', rel: 'noopener' }, 'Actions'),
@@ -161,3 +161,42 @@ export function confirmText(action) {
 }
 
 export const workflowOf = (action) => WORKFLOWS[action];
+
+// The overview: per application, the version each environment runs and whether it is up to date
+// with main (✓) or how many commits behind (−3). The name opens the application's pipeline.
+function versionCell(name, env, read) {
+  if (!env) return h('span', { class: 'version none', title: `${name} : rien`, 'aria-label': `${name} : rien` }, '—');
+  const late = env.behind === null ? `${read}+` : String(env.behind);
+  const tip = env.behind === 0 ? `${name} : ${env.short}, à jour avec main` : `${name} : ${env.short}, ${late} commit(s) de retard sur main`;
+  return h(
+    'span',
+    { class: `version ${env.behind === 0 ? 'fresh' : 'late'}`, title: tip, 'aria-label': tip },
+    h('span', { class: 'vsha' }, env.short),
+    h('span', { class: 'badge' }, env.behind === 0 ? '✓' : `−${late}`),
+  );
+}
+
+export function overview(states) {
+  return h(
+    'section',
+    { class: 'overview' },
+    h('div', { class: 'ogrid legend', 'aria-hidden': 'true' }, h('span', {}, ''), COLUMNS.slice(1).map(([, legend, name]) => h('span', { title: name }, legend))),
+    states.map(({ app, summary, error }) =>
+      h(
+        'div',
+        { class: 'ogrid orow' },
+        h(
+          'a',
+          { class: 'oapp', href: `#${keyOf(app)}` },
+          h('span', { class: 'oname' }, app.name, summary?.busy ? h('span', { class: 'cell running mini', title: 'Une étape est en cours' }, h('span', { class: 'icon' })) : null),
+          h('span', { class: 'ohead' }, summary?.head ? `main ${summary.head.short}` : ''),
+        ),
+        error
+          ? h('span', { class: 'error oerror' }, error)
+          : !summary
+            ? h('span', { class: 'loading oerror' }, 'Chargement…')
+            : COLUMNS.slice(1).map(([key, , name]) => versionCell(name, summary.envs[key], summary.read)),
+      ),
+    ),
+  );
+}

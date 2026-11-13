@@ -214,7 +214,8 @@ export function pipeline(app, data) {
     const sha = c.sha;
     const run = (data.deliverRuns ?? []).find((r) => r.head_sha === sha);
     const jobs = run ? data.jobs?.[run.id] : null;
-    const deliverQa = jobs?.find((j) => j.name.startsWith('deploy-qa'));
+    // The deploy job itself ("deploy-qa / deploy"); some repositories run a check job before it.
+    const deliverQa = jobs?.find((j) => j.name === 'deploy-qa / deploy') ?? jobs?.find((j) => j.name.startsWith('deploy-qa'));
     const stages = {
       commit: commitStage(run, jobs),
       qa: stage(app, 'qa', sha, data, deliverQa),
@@ -261,4 +262,29 @@ export function pipeline(app, data) {
     };
   });
   return { rows, where, busy: rows.some((r) => STAGES.some((s) => busy(r.stages[s].state))) };
+}
+
+/**
+ * For the overview: the version each environment runs, and how far behind main it is.
+ * data.recent: how many of data.commits are the newest commits of main, in order (the others are
+ * older versions in place, fetched one by one).
+ * → { head: { sha, short }, envs: { qa, androidQa, prod, androidProd }, busy }
+ *   each env: null (nothing there) or { sha, short, behind } where behind is the number of commits
+ *   of main since that version (0: up to date), or null when older than the commits read.
+ */
+export function summary(app, data, result = pipeline(app, data)) {
+  const recent = data.commits.slice(0, data.recent ?? data.commits.length);
+  const head = recent[0] ? { sha: recent[0].sha, short: recent[0].sha.slice(0, 7) } : null;
+  const env = (sha) => {
+    if (!sha) return null;
+    const i = recent.findIndex((c) => c.sha === sha);
+    return { sha, short: sha.slice(0, 7), behind: i >= 0 ? i : null };
+  };
+  const envs = {
+    qa: env(result.where.qa),
+    androidQa: app.android ? env(result.where.androidQa) : null,
+    prod: env(result.where.prod),
+    androidProd: app.android ? env(result.where.androidProd) : null,
+  };
+  return { head, envs, read: recent.length, busy: result.busy };
 }
