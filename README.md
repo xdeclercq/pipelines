@@ -66,6 +66,9 @@ All from the GitHub API, plus one address per environment:
   `android-qa` and `android-prod` (Android ones carry the APK's version code);
 - the runs started by hand, named after the sha they work on (`Test <sha> on Android`…), which
   show a stage as running before its deployment exists, or failed when the workflow refused;
+- the jobs of the run that made a deployment (its statuses link to it), for the duration of the
+  stage: an Android deployment is only recorded when the APK is sent, so its own dates would
+  leave out the build of the APKs (most of the time);
 - `GET /api/auth/status` of qa and prod, whose `revision` says which commit runs there. It is only
   asked again when an environment's newest deployment changes, so the page does not keep the
   Fly machines awake.

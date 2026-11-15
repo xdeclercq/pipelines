@@ -9,7 +9,8 @@
 //   androidProd  Android release (environment "android-prod")
 //
 // A stage's state: success, failure, cancelled, running, waiting or none; with its start and end
-// (ISO dates; no end while it runs) when known.
+// (ISO dates; no end while it runs) when known: those of the jobs that did it, so that Android
+// counts the build of the APKs and not only their publication, which is all its deployment covers.
 
 import { WORKFLOWS, RECENT } from './config.js';
 
@@ -102,6 +103,28 @@ function deploymentsOf(deployments, sha) {
   return (deployments ?? []).filter((d) => d.sha === sha);
 }
 
+// The id of the run that made a deployment: its statuses link to it (log_url). Null if unknown.
+export function runOf(statuses) {
+  for (const s of statuses ?? []) {
+    const id = /\/actions\/runs\/(\d+)/.exec(s.log_url ?? '')?.[1];
+    if (id) return id;
+  }
+  return null;
+}
+
+// When the jobs of a run did a stage: from the start of the first to the end of the last (the APK
+// build, then its publication); no end while one is going. Skipped jobs apart and, after a re-run
+// of the failed jobs, only those run again. Nothing known without such a job.
+function jobsSpan(jobs, name) {
+  const ran = (jobs ?? []).filter((j) => j.name.startsWith(STAGE_JOBS[name]) && runState(j) !== 'none');
+  const attempt = Math.max(...ran.map((j) => j.run_attempt ?? 1));
+  const own = ran.filter((j) => (j.run_attempt ?? 1) === attempt);
+  return {
+    start: earliest(own.map((j) => j.started_at)),
+    end: own.length > 0 && own.every((j) => j.status === 'completed') ? latest(own.map((j) => j.completed_at)) : null,
+  };
+}
+
 // What a run that is still going does in a stage, from its jobs: nothing once that stage's jobs
 // are all done or skipped (its deployment then says how it went), else running or waiting, since
 // its first job of that stage started (or since the run started). Without its jobs: running.
@@ -129,13 +152,17 @@ function stage(app, name, sha, data, deliverJob) {
   for (const d of deploymentsOf(data.deployments[STAGE_ENV[name]], sha)) {
     const status = d.statuses?.find((s) => s.state !== 'inactive') ?? d.statuses?.[0];
     const state = deploymentState(d.statuses);
+    // The deployment is only recorded once the stage is under way (after the APK build): the
+    // jobs of its run say how long the stage took; without them, the deployment itself.
+    const run = runOf(d.statuses);
+    const span = jobsSpan(data.jobs?.[run] ?? data.dispatchJobs?.[run], name);
     events.push({
       at: time(d.created_at),
       state,
       link: status?.log_url || null,
       versionCode: d.payload?.version_code ?? null,
-      start: d.created_at ?? null,
-      end: busy(state) ? null : (status?.created_at ?? null),
+      start: span.start ?? d.created_at ?? null,
+      end: busy(state) ? null : (span.end ?? status?.created_at ?? null),
     });
   }
   for (const r of data.dispatchRuns ?? []) {
@@ -187,7 +214,8 @@ function current(deployments, live) {
  *   jobs: { [runId]: [job] }
  *   deployments: { qa: [deployment with .statuses], 'android-qa': …, prod: …, 'android-prod': … }
  *   dispatchRuns: [workflow run]               (started by hand, newest first)
- *   dispatchJobs: { [runId]: [job] }           (of those still going)
+ *   dispatchJobs: { [runId]: [job] }           (of those still going, and of the runs that made
+ *                                               the deployments of the versions shown)
  *   live: { qa: sha | null, prod: sha | null }
  * }
  * app: { android: boolean }

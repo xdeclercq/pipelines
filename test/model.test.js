@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { pipeline, deploymentState, runState, summary } from '../src/model.js';
+import { pipeline, deploymentState, runState, runOf, summary } from '../src/model.js';
 
 const A = 'a'.repeat(40); // newest commit
 const B = 'b'.repeat(40);
@@ -225,6 +225,43 @@ describe('the pipeline of a version', () => {
     d.dispatchRuns = [];
     const done = rowOf(pipeline(APP, d), A);
     assert.deepEqual([done.stages.qa.start, done.stages.qa.end], [at(34), at(36)]);
+  });
+
+  test('a stage lasts as long as the jobs of its run: Android counts the build of the APKs', () => {
+    // Deploy to qa of A, already accepted in qa: the web is skipped, the APKs take 8 minutes to
+    // build, and the deployment is only recorded when the qa one is sent (1 minute).
+    const url = 'https://github.com/x/y/actions/runs/940';
+    const timed = (name, start, end, more = {}) => ({ ...job(name, end == null ? null : 'success', end == null ? 'in_progress' : 'completed'), started_at: at(start), completed_at: end == null ? null : at(end), ...more });
+    const recorded = (states) => ({ ...deployment(23, A, 49, []), statuses: states.map(([state, minutes]) => ({ state, log_url: url, created_at: at(minutes) })) });
+    assert.equal(runOf(recorded([['success', 50]]).statuses), '940');
+    assert.equal(runOf([{ state: 'success', log_url: 'log/13' }]), null);
+
+    const d = data({ dispatchRuns: [dispatch('Deploy to qa', A, 40)] });
+    d.deployments['android-qa'].unshift(recorded([['success', 50], ['in_progress', 49]]));
+    const span = () => {
+      const s = rowOf(pipeline(APP, d), A).stages.androidQa;
+      return [s.state, s.start, s.end];
+    };
+    assert.deepEqual(span(), ['success', at(49), at(50)], 'without the jobs: the deployment alone');
+
+    const build = timed('android-build / build', 41, 49);
+    d.dispatchJobs = { 940: [job('resolve'), { ...job('deploy', 'skipped'), started_at: at(40), completed_at: at(40) }, build, timed('android-qa / publish', 49, 51)] };
+    assert.deepEqual(span(), ['success', at(41), at(51)]);
+    assert.equal(rowOf(pipeline(APP, d), A).stages.qa.start, at(32), 'the web keeps the start of its own deployment');
+
+    // While the APK is sent, the time goes on from the start of the build.
+    d.deployments['android-qa'][0] = recorded([['in_progress', 49]]);
+    d.dispatchRuns = [dispatch('Deploy to qa', A, 40, 'in_progress', null)];
+    d.dispatchJobs[940][3] = timed('android-qa / publish', 49, null);
+    assert.deepEqual(span(), ['running', at(41), null]);
+    // Recorded as sent a moment before its job ends.
+    d.deployments['android-qa'][0] = recorded([['success', 50], ['in_progress', 49]]);
+    assert.deepEqual(span(), ['success', at(41), at(50)]);
+
+    // The failed publication run again later: only that attempt counts, not the wait.
+    d.deployments['android-qa'][0] = recorded([['success', 58], ['in_progress', 57]]);
+    d.dispatchJobs[940][3] = timed('android-qa / publish', 57, 58, { run_attempt: 2 });
+    assert.deepEqual(span(), ['success', at(57), at(58)]);
   });
 
   test('shows the 3 newest versions, and those in qa and prod however old', () => {

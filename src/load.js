@@ -2,7 +2,7 @@
 // finished run, the statuses of a finished deployment) is kept in `cache` between refreshes.
 
 import { ENVIRONMENTS, COMMITS } from './config.js';
-import { isFinal, positions, shownCommits } from './model.js';
+import { isFinal, positions, shownCommits, runOf } from './model.js';
 
 // Deployments per environment whose statuses are read: the newest ones are enough to place the
 // versions shown.
@@ -20,12 +20,14 @@ async function statusesOf(gh, repo, deployment, cache) {
   return statuses;
 }
 
+// A run not among those listed (`run` is then its id alone) is an old one: kept once its jobs are
+// all done.
 async function jobsOf(gh, repo, run, cache) {
   const key = `${run.id}/${run.run_attempt}`;
   const kept = cache.jobs.get(key);
   if (kept) return kept;
   const { jobs } = await gh.get(`/repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=50`);
-  if (run.status === 'completed') cache.jobs.set(key, jobs);
+  if (run.status ? run.status === 'completed' : jobs.every((j) => j.status === 'completed')) cache.jobs.set(key, jobs);
   return jobs;
 }
 
@@ -94,6 +96,31 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
     dispatch.workflow_runs
       .filter((run) => run.status !== 'completed')
       .map(async (run) => (dispatchJobs[run.id] = await jobsOf(gh, r, run, cache))),
+  );
+
+  // Jobs of the runs that made the newest deployment of each version shown, per environment: how
+  // long the stage took, the build of the APKs included. A run that is gone is asked for once.
+  const listed = new Map([...runs, ...dispatch.workflow_runs].map((run) => [String(run.id), run]));
+  const made = new Set();
+  for (const env of ENVIRONMENTS) {
+    const seen = new Set();
+    for (const d of deployments[env]) {
+      if (!shown.has(d.sha) || seen.has(d.sha)) continue;
+      seen.add(d.sha);
+      const id = runOf(d.statuses);
+      if (id && !jobs[id] && !dispatchJobs[id]) made.add(id);
+    }
+  }
+  await Promise.all(
+    [...made].map(async (id) => {
+      const run = listed.get(id) ?? { id };
+      try {
+        dispatchJobs[id] = await jobsOf(gh, r, run, cache);
+      } catch (e) {
+        if (e.status !== 404) throw e;
+        cache.jobs.set(`${run.id}/${run.run_attempt}`, []);
+      }
+    }),
   );
 
   return { commits, recent, deliverRuns: runs, jobs, deployments, dispatchRuns: dispatch.workflow_runs, dispatchJobs, live };
