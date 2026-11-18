@@ -8,7 +8,10 @@ from the commit stage to prod, web and Android, with the buttons that move it on
 
 A menu shows one application at a time, or the **overview**: per application, the version that
 runs in QA and in prod (web 🌐, Android 📱), with ✓ when it is the newest commit of `main`, else
-how many commits it is behind (−3). The choice is kept, and in the address (`#tabula`).
+how many commits it is behind (−3), and the buttons that move it on: **▶ QA** under QA for the
+newest commit of `main`, **▶ Prod** under Prod for the version in QA (the one the testers have on
+Android), each where the application's pipeline would show it, and ▶ Prod only forwards (never a
+version older than prod's). The choice is kept, and in the address (`#tabula`).
 
 | Stage | Started | What it does |
 | --- | --- | --- |

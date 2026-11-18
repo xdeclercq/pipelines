@@ -319,4 +319,72 @@ describe('the overview', () => {
     assert.equal(o.envs.androidProd, null);
     assert.equal(summary({ android: false }, d).envs.androidQa, null);
   });
+
+  test('offers main to qa, and the version the testers have to prod', () => {
+    const d = data();
+    d.recent = 3;
+    const o = summary(APP, d);
+    assert.deepEqual(o.actions.deployQa, { sha: A, short: 'aaaaaaa', title: 'Change a', was: 'none' }, 'web in qa, Android not yet');
+    assert.deepEqual(o.actions.promote, { sha: B, short: 'bbbbbbb', title: 'Change b', was: 'none' });
+  });
+
+  test('offers nothing the pipeline would not show', () => {
+    const d = data();
+    d.recent = 3;
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']));
+    d.deployments.prod.unshift(deployment(32, A, 50, ['in_progress']));
+    const o = summary(APP, d);
+    assert.equal(o.actions.deployQa, null, 'main already in qa, web and Android');
+    assert.equal(o.actions.promote, null, 'a promotion is under way');
+  });
+
+  test('a failed stage is offered again, framed as such', () => {
+    const d = data();
+    d.recent = 3;
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['failure']));
+    assert.equal(summary(APP, d).actions.deployQa.was, 'failure');
+  });
+
+  test('only forwards: the version in qa is not promoted over a newer one in prod', () => {
+    const d = data();
+    d.recent = 3;
+    // C back in qa (web and Android) while B is in prod.
+    d.live = { qa: C, prod: B };
+    d.deployments['android-qa'].unshift(deployment(24, C, 50, ['success']));
+    d.deployments['android-prod'].unshift(deployment(42, B, 40, ['success']));
+    const p = pipeline(APP, d);
+    assert.equal(rowOf(p, C).actions.promote.enabled, true, 'the pipeline allows going back');
+    assert.equal(summary(APP, d, p).actions.promote, null);
+  });
+
+  test('without Android, the web version in qa', () => {
+    const d = data();
+    d.recent = 3;
+    // A has not reached qa yet.
+    d.live = { qa: B, prod: C };
+    d.deployments.qa = d.deployments.qa.filter((x) => x.sha !== A);
+    d.jobs[3] = [job('test'), job('build')];
+    const o = summary({ android: false }, d);
+    assert.equal(o.actions.promote.sha, B);
+    assert.equal(o.actions.deployQa.sha, A);
+  });
+});
+
+describe('the buttons', () => {
+  test('take the place of the first stage not reached, or failed, never of one that went well', () => {
+    const p = pipeline(APP, data());
+    assert.equal(rowOf(p, A).actions.deployQa.slot, 'androidQa');
+    assert.equal(rowOf(p, B).actions.promote.slot, 'prod');
+    assert.equal(rowOf(p, A).actions.promote.slot, null, 'not enabled');
+  });
+
+  test('none when both stages went well, even if the version is no longer there', () => {
+    const d = data();
+    d.live = { qa: A, prod: C };
+    d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']), deployment(24, B, 46, ['success']));
+    // B: web and Android went well in qa, but qa web runs A.
+    const b = rowOf(pipeline(APP, d), B);
+    assert.equal(b.actions.deployQa.enabled, true);
+    assert.equal(b.actions.deployQa.slot, null);
+  });
 });

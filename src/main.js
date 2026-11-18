@@ -159,8 +159,8 @@ $('apps').addEventListener('click', async (e) => {
   if (!button || !gh) return;
   // Already started: no second click while it launches.
   if (button.getAttribute('aria-disabled') === 'true') return;
-  const { action, repo, sha } = button.dataset;
-  if (!confirm(confirmText(action))) return;
+  const { action, repo, sha, app } = button.dataset;
+  if (!confirm(confirmText(action, app, sha))) return;
   const workflow = workflowOf(action);
   button.setAttribute('aria-disabled', 'true');
   try {

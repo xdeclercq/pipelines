@@ -24,14 +24,7 @@ const COLUMNS = [
   ['androidProd', 'Prod 📱', 'Prod Android (APK publié)'],
 ];
 
-// The stages each button starts; it shows in the first one not reached yet, or that failed (to try
-// again), never over a stage that went well: a version already deployed is not offered again here
-// (going back to it: Actions → the workflow → Run workflow).
-const ACTION_STAGES = (app) => ({
-  deployQa: app.android ? ['qa', 'androidQa'] : ['qa'],
-  promote: app.android ? ['prod', 'androidProd'] : ['prod'],
-});
-
+// Each button shows in place of a stage it starts (its slot, see pipeline() in model.js).
 const ACTIONS = [
   // U+FE0E: the triangle as text, not as an emoji (iOS).
   ['deployQa', '▶\uFE0E QA', 'Déployer en QA'],
@@ -90,31 +83,30 @@ function stageCell(key, name, stage, now) {
   );
 }
 
-function button(app, r, key, label, name, stage) {
-  const was = stage.state === 'none' ? '' : ` (actuellement : ${STATE[stage.state] ?? stage.state})`;
+// A button that starts a workflow for a version (see main.js); state: that of the stage it takes
+// the place of.
+function button(app, sha, key, label, name, state, extra = {}) {
+  const was = state === 'none' ? '' : ` (actuellement : ${STATE[state] ?? state})`;
   return h(
     'button',
     {
       type: 'button',
-      class: `go was-${stage.state}`, // a failure frames it in red
+      class: `go was-${state}${extra.class ? ` ${extra.class}` : ''}`, // a failure frames it in red
       title: `${name}${was}`,
       'aria-label': `${name}${was}`,
       'data-action': key,
       'data-repo': app.repo,
-      'data-sha': r.sha,
+      'data-app': app.name,
+      'data-sha': sha,
     },
     label,
+    extra.children ?? null,
   );
 }
 
 function row(app, r, now) {
   const slots = {};
-  for (const [key, label, name] of ACTIONS) {
-    if (!r.actions[key].enabled) continue;
-    const stages = ACTION_STAGES(app)[key];
-    const slot = stages.find((st) => ['none', 'failure', 'cancelled'].includes(r.stages[st].state));
-    if (slot) slots[slot] = [key, label, name];
-  }
+  for (const [key, label, name] of ACTIONS) if (r.actions[key].slot) slots[r.actions[key].slot] = [key, label, name];
   return h(
     'div',
     { class: `row${r.here.length ? ' here' : ''}` },
@@ -130,7 +122,7 @@ function row(app, r, now) {
       'div',
       { class: 'grid' },
       COLUMNS.map(([key, , name]) =>
-        slots[key] ? button(app, r, ...slots[key], r.stages[key]) : stageCell(key, name, r.stages[key], now),
+        slots[key] ? button(app, r.sha, ...slots[key], r.stages[key].state) : stageCell(key, name, r.stages[key], now),
       ),
     ),
   );
@@ -156,14 +148,18 @@ export function appSection(app, result, error, now = Date.now()) {
   );
 }
 
-export function confirmText(action) {
-  return { deployQa: 'Déployer en QA ?', promote: 'Mettre en prod ?' }[action];
+// The question asked before starting a workflow: which application and which version.
+export function confirmText(action, appName, sha) {
+  const what = `${appName} ${sha.slice(0, 7)}`;
+  return { deployQa: `Déployer ${what} en QA ?`, promote: `Mettre ${what} en prod ?` }[action];
 }
 
 export const workflowOf = (action) => WORKFLOWS[action];
 
 // The overview: per application, the version each environment runs and whether it is up to date
-// with main (✓) or how many commits behind (−3). The name opens the application's pipeline.
+// with main (✓) or how many commits behind (−3), and under it the buttons that move it on: ▶ QA
+// (the newest commit of main) under QA, ▶ Prod (the version in QA) under Prod. The name opens the
+// application's pipeline.
 function versionCell(name, env, read) {
   if (!env) return h('span', { class: 'version none', title: `${name} : rien`, 'aria-label': `${name} : rien` }, '—');
   const late = env.behind === null ? `${read}+` : String(env.behind);
@@ -195,8 +191,22 @@ export function overview(states) {
           ? h('span', { class: 'error oerror' }, error)
           : !summary
             ? h('span', { class: 'loading oerror' }, 'Chargement…')
-            : COLUMNS.slice(1).map(([key, , name]) => versionCell(name, summary.envs[key], summary.read)),
+            : [
+                ...COLUMNS.slice(1).map(([key, , name]) => versionCell(name, summary.envs[key], summary.read)),
+                ...overviewButtons(app, summary.actions),
+              ],
       ),
     ),
   );
+}
+
+function overviewButtons(app, actions) {
+  return ACTIONS.map(([key, label, name]) => {
+    const v = actions[key];
+    if (!v) return null;
+    return button(app, v.sha, key, label, `${name} ${v.short} : ${v.title}`, v.was, {
+      class: `ogo ${key}`,
+      children: h('span', { class: 'vsha' }, v.short),
+    });
+  });
 }

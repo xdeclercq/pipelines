@@ -41,7 +41,9 @@
       <p>
         La <strong>vue d’ensemble</strong> donne, pour chaque appli, la version en QA et en prod
         (web 🌐, Android 📱) : ✓ si elle est à jour avec <code>main</code>, sinon son retard en
-        commits (−3) ; le nom ouvre son pipeline. Dans le pipeline d’une appli, chaque ligne est
+        commits (−3) ; dessous, <strong>▶ QA</strong> y déploie le dernier commit de
+        <code>main</code> et <strong>▶ Prod</strong> met en prod la version en QA (celle des
+        testeurs sur Android), quand le pipeline le permet ; le nom ouvre son pipeline. Dans le pipeline d’une appli, chaque ligne est
         une version (un commit de <code>main</code>) : les 3 dernières, et celles en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
         QA (tests d’acceptation compris) ; <strong>▶ QA</strong> y ajoute l’app Android pour les
         testeurs ; <strong>▶ Prod</strong> publie web et Android. Un bouton n’apparaît que pour

@@ -70,6 +70,15 @@ export function isFinal(statuses) {
 const time = (iso) => (iso ? Date.parse(iso) : 0);
 const busy = (s) => s === 'running' || s === 'waiting';
 
+// The stages each button starts. It shows in the first one not reached yet, or that failed (to try
+// again), never over a stage that went well: a version already deployed is not offered again
+// (going back to it: Actions → the workflow → Run workflow).
+const ACTION_STAGES = (app) => ({
+  deployQa: app.android ? ['qa', 'androidQa'] : ['qa'],
+  promote: app.android ? ['prod', 'androidProd'] : ['prod'],
+});
+const OPEN = ['none', 'failure', 'cancelled'];
+
 function combine(states) {
   if (states.includes('failure')) return 'failure';
   if (states.includes('cancelled')) return 'cancelled';
@@ -276,6 +285,10 @@ export function pipeline(app, data) {
               ? { enabled: false, reason: 'Une mise en prod est en cours.' }
               : { enabled: true },
     };
+    // Where its button shows (null: nowhere).
+    for (const [key, names] of Object.entries(ACTION_STAGES(app))) {
+      actions[key].slot = actions[key].enabled ? (names.find((n) => OPEN.includes(stages[n].state)) ?? null) : null;
+    }
     return {
       sha,
       short: sha.slice(0, 7),
@@ -293,19 +306,26 @@ export function pipeline(app, data) {
 }
 
 /**
- * For the overview: the version each environment runs, and how far behind main it is.
+ * For the overview: the version each environment runs, how far behind main it is, and what can be
+ * moved on from there.
  * data.recent: how many of data.commits are the newest commits of main, in order (the others are
  * older versions in place, fetched one by one).
- * → { head: { sha, short }, envs: { qa, androidQa, prod, androidProd }, busy }
+ * → { head: { sha, short }, envs: { qa, androidQa, prod, androidProd }, actions, read, busy }
  *   each env: null (nothing there) or { sha, short, behind } where behind is the number of commits
  *   of main since that version (0: up to date), or null when older than the commits read.
+ *   actions: { deployQa, promote }, each null or { sha, short, title, was } (was: the state of the
+ *   stage its button takes the place of), offered when the pipeline would show that button:
+ *   deployQa  the newest commit of main to qa;
+ *   promote   the version in qa (on Android when the app has it: the one the testers have) to
+ *             prod, only forwards: never older than what prod runs (going back is done in GitHub).
  */
 export function summary(app, data, result = pipeline(app, data)) {
   const recent = data.commits.slice(0, data.recent ?? data.commits.length);
   const head = recent[0] ? { sha: recent[0].sha, short: recent[0].sha.slice(0, 7) } : null;
+  const index = (sha) => recent.findIndex((c) => c.sha === sha);
   const env = (sha) => {
     if (!sha) return null;
-    const i = recent.findIndex((c) => c.sha === sha);
+    const i = index(sha);
     return { sha, short: sha.slice(0, 7), behind: i >= 0 ? i : null };
   };
   const envs = {
@@ -314,5 +334,20 @@ export function summary(app, data, result = pipeline(app, data)) {
     prod: env(result.where.prod),
     androidProd: app.android ? env(result.where.androidProd) : null,
   };
-  return { head, envs, read: recent.length, busy: result.busy };
+  const offer = (key, sha) => {
+    const r = sha ? result.rows.find((x) => x.sha === sha) : null;
+    const a = r?.actions[key];
+    return a?.enabled && a.slot ? { sha: r.sha, short: r.short, title: r.title, was: r.stages[a.slot].state } : null;
+  };
+  const candidate = app.android ? result.where.androidQa : result.where.qa;
+  // Not older than a version in prod (one older than the commits read is older than it).
+  const forwards =
+    candidate &&
+    index(candidate) >= 0 &&
+    [result.where.prod, app.android ? result.where.androidProd : null].every((p) => !p || index(p) < 0 || index(candidate) <= index(p));
+  const actions = {
+    deployQa: offer('deployQa', head?.sha),
+    promote: forwards ? offer('promote', candidate) : null,
+  };
+  return { head, envs, actions, read: recent.length, busy: result.busy };
 }
