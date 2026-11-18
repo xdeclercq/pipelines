@@ -41,6 +41,10 @@ README of each application ("Deployment pipeline").
      commits), **Deployments** read;
    - an expiration date.
 
+   A token limited to some of these repositories shows only those applications, in the menu and
+   the overview (GitHub answers 404 for the others). They are asked again at ⟳ or when the page
+   is reloaded, not at each automatic refresh.
+
    The page keeps it in the browser (`localStorage`) and sends it only to `api.github.com`.
    *Oublier le jeton* (under *Comment ça marche*, at the bottom) removes it.
 

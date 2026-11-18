@@ -159,7 +159,7 @@ export const workflowOf = (action) => WORKFLOWS[action];
 // The overview: per application, the version each environment runs and whether it is up to date
 // with main (✓) or how many commits behind (−3), and under it the buttons that move it on: ▶ QA
 // (the newest commit of main) under QA, ▶ Prod (the version in QA) under Prod. The name opens the
-// application's pipeline.
+// application's pipeline. Only the applications the token reaches are given.
 function versionCell(name, env, read) {
   if (!env) return h('span', { class: 'version none', title: `${name} : rien`, 'aria-label': `${name} : rien` }, '—');
   const late = env.behind === null ? `${read}+` : String(env.behind);
@@ -173,6 +173,7 @@ function versionCell(name, env, read) {
 }
 
 export function overview(states) {
+  if (!states.length) return h('section', { class: 'overview' }, h('p', { class: 'error' }, 'Ce jeton n’a accès à aucune des applications.'));
   return h(
     'section',
     { class: 'overview' },

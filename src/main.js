@@ -14,35 +14,44 @@ const BUSY_EVERY = 15_000; // while something runs
 const IDLE_EVERY = 120_000;
 
 const $ = (id) => document.getElementById(id);
-const state = APPS.map((app) => ({ app, cache: newCache(), result: null, summary: null, error: null }));
+// hidden: the token has no access to the repository (a fine-grained token limited to some of
+// them); such an application leaves the menu and the overview until a forced refresh finds it.
+const state = APPS.map((app) => ({ app, cache: newCache(), result: null, summary: null, error: null, hidden: false }));
+const shown = () => state.filter((s) => !s.hidden);
 let gh = null;
 let timer = null;
 let loading = false;
 
-// The view shown: the overview, or one application (#tabula). The address wins, then the last
-// choice, then the overview.
-const views = [OVERVIEW, ...APPS.map(keyOf)];
+// The view shown: the overview, or one application the token reaches (#tabula). The address wins,
+// then the last choice, then the overview.
+const views = () => [OVERVIEW, ...shown().map((s) => keyOf(s.app))];
 function currentView() {
   const fromHash = decodeURIComponent(location.hash.slice(1));
-  if (views.includes(fromHash)) return fromHash;
+  if (views().includes(fromHash)) return fromHash;
   const saved = localStorage.getItem(VIEW_KEY);
-  return views.includes(saved) ? saved : OVERVIEW;
+  return views().includes(saved) ? saved : OVERVIEW;
 }
 
+// Rebuilt only when the applications reached change, so a refresh does not close an open menu.
+let menuKeys = null;
 function menu() {
   const select = $('view');
-  select.replaceChildren(
-    new Option('Vue d’ensemble', OVERVIEW),
-    ...APPS.map((app) => new Option(app.name, keyOf(app))),
-  );
+  const keys = views().join();
+  if (keys !== menuKeys) {
+    menuKeys = keys;
+    select.replaceChildren(
+      new Option('Vue d’ensemble', OVERVIEW),
+      ...shown().map((s) => new Option(s.app.name, keyOf(s.app))),
+    );
+  }
   select.value = currentView();
 }
 
 function render() {
+  menu();
   if (!gh) return $('apps').replaceChildren();
   const view = currentView();
-  $('view').value = view;
-  if (view === OVERVIEW) return $('apps').replaceChildren(overview(state));
+  if (view === OVERVIEW) return $('apps').replaceChildren(overview(shown()));
   const s = state.find((x) => keyOf(x.app) === view);
   $('apps').replaceChildren(appSection(s.app, s.result, s.error));
 }
@@ -87,24 +96,42 @@ function describe(err, app) {
   return `Erreur : ${err.message}`;
 }
 
+// Whether the token cannot see the repository at all: GitHub answers 404 for a private repository
+// outside a fine-grained token's selection. Any other answer leaves the error shown.
+async function outOfReach(gh, app) {
+  try {
+    await gh.get(`/repos/${app.repo}`);
+    return false;
+  } catch (err) {
+    return err instanceof ApiError && err.status === 404;
+  }
+}
+
 async function refresh({ force = false } = {}) {
   if (!gh || loading) return;
   loading = true;
   clearTimeout(timer);
   $('refresh').disabled = true;
   try {
+    const client = gh;
     await Promise.all(
-      state.map(async (s) => {
-        try {
-          const data = await loadApp(gh, s.app, s.cache, { force });
-          s.result = pipeline(s.app, data);
-          s.summary = summary(s.app, data, s.result);
-          s.error = null;
-        } catch (err) {
-          if (err instanceof ApiError && err.status === 401) throw err;
-          s.error = describe(err, s.app);
-        }
-      }),
+      state
+        .filter((s) => force || !s.hidden)
+        .map(async (s) => {
+          try {
+            const data = await loadApp(client, s.app, s.cache, { force });
+            s.result = pipeline(s.app, data);
+            s.summary = summary(s.app, data, s.result);
+            s.error = null;
+            s.hidden = false;
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 401) throw err;
+            s.hidden = err instanceof ApiError && err.status === 404 && (await outOfReach(client, s.app));
+            s.result = s.hidden ? null : s.result;
+            s.summary = s.hidden ? null : s.summary;
+            s.error = s.hidden ? null : describe(err, s.app);
+          }
+        }),
     );
     $('updated').textContent = new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
     render();
@@ -142,6 +169,7 @@ $('forget').addEventListener('click', () => {
     s.result = null;
     s.summary = null;
     s.error = null;
+    s.hidden = false;
     s.cache = newCache();
   });
   askToken();
@@ -181,7 +209,9 @@ setInterval(() => {
   for (const el of document.querySelectorAll('[data-since]')) el.textContent = shortDuration(now - Date.parse(el.dataset.since));
 }, 1_000);
 
-menu();
 const saved = localStorage.getItem(TOKEN_KEY);
 if (saved) start(saved);
-else askToken();
+else {
+  askToken();
+  render();
+}
