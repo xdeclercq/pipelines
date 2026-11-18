@@ -156,14 +156,18 @@ export function confirmText(action, appName, sha) {
 
 export const workflowOf = (action) => WORKFLOWS[action];
 
-// The overview: per application, the version each environment runs and whether it is up to date
-// with main (✓) or how many commits behind (−3), and under it the buttons that move it on: ▶ QA
-// (the newest commit of main) under QA, ▶ Prod (the version in QA) under Prod. The name opens the
-// application's pipeline. Only the applications the token reaches are given.
+// The overview: per application, the version each environment runs and whether it is the newest
+// deployable version of main (✓) or how many deployable versions behind (−3), and under it the
+// buttons that move it on: ▶ QA (that newest version) under QA, ▶ Prod (the version in QA) under
+// Prod. The name opens the application's pipeline. Only the applications the token reaches are
+// given.
 function versionCell(name, env, read) {
   if (!env) return h('span', { class: 'version none', title: `${name} : rien`, 'aria-label': `${name} : rien` }, '—');
   const late = env.behind === null ? `${read}+` : String(env.behind);
-  const tip = env.behind === 0 ? `${name} : ${env.short}, à jour avec main` : `${name} : ${env.short}, ${late} commit(s) de retard sur main`;
+  const tip =
+    env.behind === 0
+      ? `${name} : ${env.short}, la dernière version déployable de main`
+      : `${name} : ${env.short}, ${late} version(s) déployable(s) de retard sur main`;
   return h(
     'span',
     { class: `version ${env.behind === 0 ? 'fresh' : 'late'}`, title: tip, 'aria-label': tip },
@@ -186,7 +190,11 @@ export function overview(states) {
           'a',
           { class: 'oapp', href: `#${keyOf(app)}` },
           h('span', { class: 'oname' }, app.name, summary?.busy ? h('span', { class: 'cell running mini', title: 'Une étape est en cours' }, h('span', { class: 'icon' })) : null),
-          h('span', { class: 'ohead' }, summary?.head ? `main ${summary.head.short}` : ''),
+          h(
+            'span',
+            { class: 'ohead', title: 'Dernière version déployable de main (un commit qui ne change que la doc n’en est pas une)' },
+            summary?.head ? `main ${summary.head.short}` : '',
+          ),
         ),
         error
           ? h('span', { class: 'error oerror' }, error)

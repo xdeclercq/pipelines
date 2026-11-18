@@ -7,11 +7,13 @@ Delivery* (Humble and Farley) recommends: each version (commit of `main`) and ho
 from the commit stage to prod, web and Android, with the buttons that move it on.
 
 A menu shows one application at a time, or the **overview**: per application, the version that
-runs in QA and in prod (web 🌐, Android 📱), with ✓ when it is the newest commit of `main`, else
-how many commits it is behind (−3), and the buttons that move it on: **▶ QA** under QA for the
-newest commit of `main`, **▶ Prod** under Prod for the version in QA (the one the testers have on
+runs in QA and in prod (web 🌐, Android 📱), with ✓ when it is the newest deployable version of
+`main`, else how many deployable versions it is behind (−3), and the buttons that move it on:
+**▶ QA** under QA for that newest version, **▶ Prod** under Prod for the version in QA (the one the testers have on
 Android), each where the application's pipeline would show it, and ▶ Prod only forwards (never a
-version older than prod's). The choice is kept, and in the address (`#tabula`).
+version older than prod's). A commit that changes the docs alone (Markdown, `docs/`) is not a
+deployable version: Deliver does not run for it (its `paths-ignore`), so it has no image to deploy.
+The choice is kept, and in the address (`#tabula`).
 
 | Stage | Started | What it does |
 | --- | --- | --- |

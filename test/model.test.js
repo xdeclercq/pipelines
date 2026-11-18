@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { pipeline, deploymentState, runState, runOf, summary } from '../src/model.js';
+import { pipeline, deploymentState, runState, runOf, summary, deployable } from '../src/model.js';
 
 const A = 'a'.repeat(40); // newest commit
 const B = 'b'.repeat(40);
@@ -270,6 +270,7 @@ describe('the pipeline of a version', () => {
     const F = 'f'.repeat(40);
     const d = data();
     d.commits = [commit(F, 60), commit(E, 50), commit(D, 40), ...d.commits];
+    d.deliverRuns = [run(6, F), run(5, E), run(4, D), ...d.deliverRuns];
     const p = pipeline(APP, d);
     assert.deepEqual(p.rows.map((r) => r.short[0]), ['f', 'e', 'd', 'a', 'b', 'c'], 'A in qa, B android qa, C prod');
     d.deployments['android-qa'].unshift(deployment(23, A, 45, ['success']));
@@ -367,6 +368,52 @@ describe('the overview', () => {
     const o = summary({ android: false }, d);
     assert.equal(o.actions.promote.sha, B);
     assert.equal(o.actions.deployQa.sha, A);
+  });
+});
+
+describe('docs-only commits', () => {
+  // D and E change the docs alone: Deliver does not run for them (its paths-ignore).
+  const D = 'd'.repeat(40);
+  const E = 'e'.repeat(40);
+  const withDocs = (...shas) => {
+    const d = data();
+    d.commits = [...shas.map((sha, i) => commit(sha, 40 + i)), ...d.commits];
+    d.recent = d.commits.length;
+    return d;
+  };
+
+  test('are not versions', () => {
+    const d = withDocs(D);
+    assert.equal(deployable(D, d.deliverRuns), false);
+    assert.equal(deployable(A, d.deliverRuns), true);
+  });
+
+  test('the overview measures against the newest deployable version', () => {
+    const o = summary(APP, withDocs(D));
+    assert.deepEqual(o.head, { sha: A, short: 'aaaaaaa' });
+    assert.equal(o.envs.qa.behind, 0, 'A, under a docs commit, is up to date');
+    assert.equal(o.envs.androidQa.behind, 1);
+    assert.equal(o.envs.prod.behind, 2);
+    assert.equal(o.read, 3);
+    assert.equal(o.actions.deployQa.sha, A);
+  });
+
+  test('are not counted between two versions', () => {
+    const d = data();
+    d.commits = [commit(A, 30), commit(D, 25), commit(B, 20), commit(C, 10)];
+    d.recent = 4;
+    const o = summary(APP, d);
+    assert.equal(o.envs.androidQa.behind, 1);
+    assert.equal(o.envs.prod.behind, 2);
+  });
+
+  test('the pipeline shows the newest deployable version even under newer docs commits', () => {
+    const d = withDocs(D, E, 'f'.repeat(40));
+    d.live = { qa: B, prod: C };
+    d.deployments.qa = d.deployments.qa.filter((x) => x.sha !== A);
+    const p = pipeline(APP, d);
+    assert.ok(rowOf(p, A), 'A is shown');
+    assert.equal(summary(APP, d, p).actions.deployQa.sha, A);
   });
 });
 

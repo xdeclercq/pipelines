@@ -239,15 +239,24 @@ export function positions(data) {
   };
 }
 
-// The versions shown: the RECENT newest commits, then those in qa or prod, newest first.
-export function shownCommits(commits, where) {
+// Whether a commit of main is a version that can be deployed: Deliver ran for it. A change to
+// the docs alone (Markdown, docs/) starts no Deliver (its paths-ignore), so no image, no "test"
+// check, and deploy-qa refuses it.
+export function deployable(sha, deliverRuns) {
+  return (deliverRuns ?? []).some((r) => r.head_sha === sha);
+}
+
+// The versions shown: the RECENT newest commits, the newest deployable one, then those in qa or
+// prod, newest first.
+export function shownCommits(commits, where, deliverRuns) {
   const placed = new Set(Object.values(where).filter(Boolean));
-  return commits.filter((c, i) => i < RECENT || placed.has(c.sha));
+  const newest = commits.find((c) => deployable(c.sha, deliverRuns))?.sha;
+  return commits.filter((c, i) => i < RECENT || c.sha === newest || placed.has(c.sha));
 }
 
 export function pipeline(app, data) {
   const where = positions(data);
-  const rows = shownCommits(data.commits, where).map((c) => {
+  const rows = shownCommits(data.commits, where, data.deliverRuns).map((c) => {
     const sha = c.sha;
     const run = (data.deliverRuns ?? []).find((r) => r.head_sha === sha);
     const jobs = run ? data.jobs?.[run.id] : null;
@@ -306,27 +315,32 @@ export function pipeline(app, data) {
 }
 
 /**
- * For the overview: the version each environment runs, how far behind main it is, and what can be
- * moved on from there.
+ * For the overview: the version each environment runs, how far behind the newest deployable
+ * version of main it is, and what can be moved on from there. Commits that change the docs alone
+ * are not versions (see deployable()): they are not counted.
  * data.recent: how many of data.commits are the newest commits of main, in order (the others are
  * older versions in place, fetched one by one).
  * → { head: { sha, short }, envs: { qa, androidQa, prod, androidProd }, actions, read, busy }
- *   each env: null (nothing there) or { sha, short, behind } where behind is the number of commits
- *   of main since that version (0: up to date), or null when older than the commits read.
+ *   head: the newest deployable commit read (else the newest commit).
+ *   each env: null (nothing there) or { sha, short, behind } where behind is the number of
+ *   deployable commits of main since that version (0: up to date), or null when older than the
+ *   commits read (read: how many deployable ones were read).
  *   actions: { deployQa, promote }, each null or { sha, short, title, was } (was: the state of the
  *   stage its button takes the place of), offered when the pipeline would show that button:
- *   deployQa  the newest commit of main to qa;
+ *   deployQa  the head to qa;
  *   promote   the version in qa (on Android when the app has it: the one the testers have) to
  *             prod, only forwards: never older than what prod runs (going back is done in GitHub).
  */
 export function summary(app, data, result = pipeline(app, data)) {
   const recent = data.commits.slice(0, data.recent ?? data.commits.length);
-  const head = recent[0] ? { sha: recent[0].sha, short: recent[0].sha.slice(0, 7) } : null;
+  const isVersion = recent.map((c) => deployable(c.sha, data.deliverRuns));
+  const top = recent.find((c, i) => isVersion[i]) ?? recent[0];
+  const head = top ? { sha: top.sha, short: top.sha.slice(0, 7) } : null;
   const index = (sha) => recent.findIndex((c) => c.sha === sha);
   const env = (sha) => {
     if (!sha) return null;
     const i = index(sha);
-    return { sha, short: sha.slice(0, 7), behind: i >= 0 ? i : null };
+    return { sha, short: sha.slice(0, 7), behind: i >= 0 ? isVersion.slice(0, i).filter(Boolean).length : null };
   };
   const envs = {
     qa: env(result.where.qa),
@@ -349,5 +363,5 @@ export function summary(app, data, result = pipeline(app, data)) {
     deployQa: offer('deployQa', head?.sha),
     promote: forwards ? offer('promote', candidate) : null,
   };
-  return { head, envs, actions, read: recent.length, busy: result.busy };
+  return { head, envs, actions, read: isVersion.filter(Boolean).length, busy: result.busy };
 }

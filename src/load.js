@@ -83,8 +83,8 @@ export async function loadApp(gh, app, cache, { force = false } = {}) {
   }
 
   // Jobs of Deliver, only for the versions shown.
-  const shown = new Set(shownCommits(commits, where).map((c) => c.sha));
   const runs = deliver.workflow_runs;
+  const shown = new Set(shownCommits(commits, where, runs).map((c) => c.sha));
   const firstRun = new Map();
   for (const run of runs) if (shown.has(run.head_sha) && !firstRun.has(run.head_sha)) firstRun.set(run.head_sha, run);
   const jobs = {};
