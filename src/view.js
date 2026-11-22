@@ -123,11 +123,15 @@ function row(app, r, now) {
     h(
       'div',
       { class: 'grid' },
-      COLUMNS.map(([key, , name]) =>
-        slots[key]
-          ? button(app, r.sha, ...slots[key], r.stages[key].state, { run: r.actions[slots[key][0]].run })
-          : stageCell(key, name, r.stages[key], now),
-      ),
+      COLUMNS.map(([key, , name]) => {
+        const stage = r.stages[key];
+        if (!slots[key]) return stageCell(key, name, stage, now);
+        const go = button(app, r.sha, ...slots[key], stage.state, { run: r.actions[slots[key][0]].run });
+        // A stage that failed keeps its icon, which leads to the error, above the button that tries again.
+        return stage.link && (stage.state === 'failure' || stage.state === 'cancelled')
+          ? h('div', { class: 'slot' }, stageCell(key, name, stage, now), go)
+          : go;
+      }),
     ),
   );
 }

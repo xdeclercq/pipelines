@@ -24,9 +24,9 @@ The choice is kept, and in the address (`#tabula`).
 
 A button is enabled only for the versions that passed the previous stages, and each workflow
 checks it again on its side. A button only shows where it can be used, in place of the stage it
-starts: the first one not reached yet, or that failed (framed in red, to try again); never over a
-stage that went well. When the commit stage of the newest version failed (a failing test, or
-Actions out of budget), **↻ Relancer** takes its place, in the overview under QA: it re-runs the
+starts: the first one not reached yet, or under the one that failed (framed in red, to try again;
+the failed stage's icon still leads to the error); never over a stage that went well. When the commit stage of the newest version failed (a failing test, or
+Actions out of budget), **↻ Relancer** shows under it, in the overview under QA: it re-runs the
 failed jobs of that Deliver run, as *Re-run failed jobs* in GitHub, its deploy to qa web included.
 Only for the newest version: that deploy would put an older one back in qa. Going back to a version already deployed (qa or prod) is done in GitHub:
 Actions → *Deploy to qa* or *Promote to prod* → Run workflow, with its sha. Each application shows its 3

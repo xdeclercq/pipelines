@@ -47,10 +47,11 @@
         une version (un commit de <code>main</code>) : les 3 dernières, et celles en QA et en prod. 🌐 web, 📱 Android. Chaque push passe seul l’étape de commit et le web en
         QA (tests d’acceptation compris) ; <strong>▶ QA</strong> y ajoute l’app Android pour les
         testeurs ; <strong>▶ Prod</strong> publie web et Android. Un bouton n’apparaît que pour
-        une version qui a passé les étapes précédentes, à la place de l’étape qu’il lance : pas
-        encore faite, ou en échec (cadre rouge, pour réessayer). Si l’étape de commit de la dernière
-        version a échoué (un test, ou plus de budget Actions), <strong>↻ Relancer</strong> prend sa
-        place (sous QA dans la vue d’ensemble) : il relance les jobs en échec de Deliver. Revenir à une version déjà
+        une version qui a passé les étapes précédentes, à la place de l’étape qu’il lance si elle
+        n’est pas encore faite, ou sous elle si elle a échoué (cadre rouge, pour réessayer ; la
+        croix mène toujours à l’erreur). Si l’étape de commit de la dernière
+        version a échoué (un test, ou plus de budget Actions), <strong>↻ Relancer</strong> apparaît
+        sous la croix (sous QA dans la vue d’ensemble) : il relance les jobs en échec de Deliver. Revenir à une version déjà
         déployée se fait dans GitHub : Actions → le workflow → Run workflow, avec son sha.
       </p>
       <p class="keys">
