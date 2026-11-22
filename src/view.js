@@ -26,6 +26,7 @@ const COLUMNS = [
 
 // Each button shows in place of a stage it starts (its slot, see pipeline() in model.js).
 const ACTIONS = [
+  ['rerun', '↻\uFE0E Relancer', 'Relancer les jobs en échec de Deliver'],
   // U+FE0E: the triangle as text, not as an emoji (iOS).
   ['deployQa', '▶\uFE0E QA', 'Déployer en QA'],
   ['promote', '▶\uFE0E Prod', 'Mettre en prod'],
@@ -98,6 +99,7 @@ function button(app, sha, key, label, name, state, extra = {}) {
       'data-repo': app.repo,
       'data-app': app.name,
       'data-sha': sha,
+      'data-run': extra.run ?? null, // rerun: the run of Deliver
     },
     label,
     extra.children ?? null,
@@ -122,7 +124,9 @@ function row(app, r, now) {
       'div',
       { class: 'grid' },
       COLUMNS.map(([key, , name]) =>
-        slots[key] ? button(app, r.sha, ...slots[key], r.stages[key].state) : stageCell(key, name, r.stages[key], now),
+        slots[key]
+          ? button(app, r.sha, ...slots[key], r.stages[key].state, { run: r.actions[slots[key][0]].run })
+          : stageCell(key, name, r.stages[key], now),
       ),
     ),
   );
@@ -151,15 +155,21 @@ export function appSection(app, result, error, now = Date.now()) {
 // The question asked before starting a workflow: which application and which version.
 export function confirmText(action, appName, sha) {
   const what = `${appName} ${sha.slice(0, 7)}`;
-  return { deployQa: `Déployer ${what} en QA ?`, promote: `Mettre ${what} en prod ?` }[action];
+  return {
+    rerun: `Relancer les jobs en échec de Deliver pour ${what} ?`,
+    deployQa: `Déployer ${what} en QA ?`,
+    promote: `Mettre ${what} en prod ?`,
+  }[action];
 }
 
-export const workflowOf = (action) => WORKFLOWS[action];
+// What a button starts, as said once it is started.
+export const startedText = (action, sha) =>
+  action === 'rerun' ? `Deliver relancé pour ${sha.slice(0, 7)}.` : `« ${WORKFLOWS[action].name} » lancé pour ${sha.slice(0, 7)}.`;
 
 // The overview: per application, the version each environment runs and whether it is the newest
 // deployable version of main (✓) or how many deployable versions behind (−3), and under it the
-// buttons that move it on: ▶ QA (that newest version) under QA, ▶ Prod (the version in QA) under
-// Prod. The name opens the application's pipeline. Only the applications the token reaches are
+// buttons that move it on: ▶ QA (that newest version) under QA, or ↻ Relancer when its commit
+// stage failed, ▶ Prod (the version in QA) under Prod. The name opens the application's pipeline. Only the applications the token reaches are
 // given.
 function versionCell(name, env, read) {
   if (!env) return h('span', { class: 'version none', title: `${name} : rien`, 'aria-label': `${name} : rien` }, '—');
@@ -215,6 +225,7 @@ function overviewButtons(app, actions) {
     if (!v) return null;
     return button(app, v.sha, key, label, `${name} ${v.short} : ${v.title}`, v.was, {
       class: `ogo ${key}`,
+      run: v.run,
       children: h('span', { class: 'vsha' }, v.short),
     });
   });

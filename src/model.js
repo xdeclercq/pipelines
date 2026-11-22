@@ -72,8 +72,10 @@ const busy = (s) => s === 'running' || s === 'waiting';
 
 // The stages each button starts. It shows in the first one not reached yet, or that failed (to try
 // again), never over a stage that went well: a version already deployed is not offered again
-// (going back to it: Actions → the workflow → Run workflow).
+// (going back to it: Actions → the workflow → Run workflow). rerun: the failed jobs of Deliver run
+// again, in place of the commit stage that failed.
 const ACTION_STAGES = (app) => ({
+  rerun: ['commit'],
   deployQa: app.android ? ['qa', 'androidQa'] : ['qa'],
   promote: app.android ? ['prod', 'androidProd'] : ['prod'],
 });
@@ -246,16 +248,20 @@ export function deployable(sha, deliverRuns) {
   return (deliverRuns ?? []).some((r) => r.head_sha === sha);
 }
 
+// The newest commit read that is a version (see deployable()), or undefined.
+export const newestVersion = (commits, deliverRuns) => commits.find((c) => deployable(c.sha, deliverRuns))?.sha;
+
 // The versions shown: the RECENT newest commits, the newest deployable one, then those in qa or
 // prod, newest first.
 export function shownCommits(commits, where, deliverRuns) {
   const placed = new Set(Object.values(where).filter(Boolean));
-  const newest = commits.find((c) => deployable(c.sha, deliverRuns))?.sha;
+  const newest = newestVersion(commits, deliverRuns);
   return commits.filter((c, i) => i < RECENT || c.sha === newest || placed.has(c.sha));
 }
 
 export function pipeline(app, data) {
   const where = positions(data);
+  const newest = newestVersion(data.commits, data.deliverRuns);
   const rows = shownCommits(data.commits, where, data.deliverRuns).map((c) => {
     const sha = c.sha;
     const run = (data.deliverRuns ?? []).find((r) => r.head_sha === sha);
@@ -275,6 +281,14 @@ export function pipeline(app, data) {
     const tested = everSucceeded(data.deployments['android-qa'], sha) || everSucceeded(data.deployments['android-prod'], sha);
     const inQa = where.qa === sha && (!app.android || where.androidQa === sha);
     const actions = {
+      // Re-runs the failed jobs of Deliver (tests, image, then its deploy to qa web): only for the
+      // newest version, since the deploy that follows would put an older one back in qa.
+      rerun:
+        sha !== newest
+          ? { enabled: false, reason: 'Seule la dernière version de main se relance ici.' }
+          : !['failure', 'cancelled'].includes(stages.commit.state) || run?.status !== 'completed'
+            ? { enabled: false, reason: "L'étape de commit de cette version n'est pas en échec." }
+            : { enabled: true, run: run.id },
       // Web then APKs: the workflow runs the acceptance tests itself before building the APKs.
       deployQa:
         stages.commit.state !== 'success'
@@ -325,8 +339,10 @@ export function pipeline(app, data) {
  *   each env: null (nothing there) or { sha, short, behind } where behind is the number of
  *   deployable commits of main since that version (0: up to date), or null when older than the
  *   commits read (read: how many deployable ones were read).
- *   actions: { deployQa, promote }, each null or { sha, short, title, was } (was: the state of the
- *   stage its button takes the place of), offered when the pipeline would show that button:
+ *   actions: { rerun, deployQa, promote }, each null or { sha, short, title, was } (was: the state
+ *   of the stage its button takes the place of; rerun also has the run), offered when the pipeline
+ *   would show that button:
+ *   rerun     the failed jobs of Deliver for the head (its commit stage failed);
  *   deployQa  the head to qa;
  *   promote   the version in qa (on Android when the app has it: the one the testers have) to
  *             prod, only forwards: never older than what prod runs (going back is done in GitHub).
@@ -351,7 +367,8 @@ export function summary(app, data, result = pipeline(app, data)) {
   const offer = (key, sha) => {
     const r = sha ? result.rows.find((x) => x.sha === sha) : null;
     const a = r?.actions[key];
-    return a?.enabled && a.slot ? { sha: r.sha, short: r.short, title: r.title, was: r.stages[a.slot].state } : null;
+    if (!a?.enabled || !a.slot) return null;
+    return { sha: r.sha, short: r.short, title: r.title, was: r.stages[a.slot].state, ...(a.run ? { run: a.run } : {}) };
   };
   const candidate = app.android ? result.where.androidQa : result.where.qa;
   // Not older than a version in prod (one older than the commits read is older than it).
@@ -360,6 +377,7 @@ export function summary(app, data, result = pipeline(app, data)) {
     index(candidate) >= 0 &&
     [result.where.prod, app.android ? result.where.androidProd : null].every((p) => !p || index(p) < 0 || index(candidate) <= index(p));
   const actions = {
+    rerun: offer('rerun', head?.sha),
     deployQa: offer('deployQa', head?.sha),
     promote: forwards ? offer('promote', candidate) : null,
   };

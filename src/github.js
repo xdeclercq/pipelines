@@ -37,7 +37,9 @@ export class GitHub {
       }
       throw new ApiError(res.status, path, message);
     }
-    return res.status === 204 ? null : res.json();
+    // 204, or 201 with an empty body (a re-run): nothing to read.
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
   }
 
   get(path) {
@@ -48,5 +50,10 @@ export class GitHub {
   // refresh shows it.
   dispatch(repo, file, sha) {
     return this.request('POST', `/repos/${repo}/actions/workflows/${file}/dispatches`, { ref: 'main', inputs: { sha } });
+  }
+
+  // Runs again the failed (and cancelled) jobs of a finished run, and the jobs that need them.
+  rerunFailed(repo, runId) {
+    return this.request('POST', `/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`);
   }
 }

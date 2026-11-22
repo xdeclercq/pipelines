@@ -17,7 +17,7 @@ The choice is kept, and in the address (`#tabula`).
 
 | Stage | Started | What it does |
 | --- | --- | --- |
-| Commit | each push to `main` (Deliver) | tests; the Docker image built once |
+| Commit | each push to `main` (Deliver); **↻ Relancer** when it failed | tests; the Docker image built once |
 | qa web | right after (Deliver), at each push | that image deployed to qa, its commit checked, acceptance tests run on it |
 | qa web + Android | **▶ QA** | the web as above (skipped if qa already runs that version, accepted), then the qa and prod APKs built together; the qa one sent to the Firebase group `qa` |
 | Prod web + Android | **▶ Prod** | the same image in prod; the prod APK built with the tested one sent to the group `family` |
@@ -25,7 +25,10 @@ The choice is kept, and in the address (`#tabula`).
 A button is enabled only for the versions that passed the previous stages, and each workflow
 checks it again on its side. A button only shows where it can be used, in place of the stage it
 starts: the first one not reached yet, or that failed (framed in red, to try again); never over a
-stage that went well. Going back to a version already deployed (qa or prod) is done in GitHub:
+stage that went well. When the commit stage of the newest version failed (a failing test, or
+Actions out of budget), **↻ Relancer** takes its place, in the overview under QA: it re-runs the
+failed jobs of that Deliver run, as *Re-run failed jobs* in GitHub, its deploy to qa web included.
+Only for the newest version: that deploy would put an older one back in qa. Going back to a version already deployed (qa or prod) is done in GitHub:
 Actions → *Deploy to qa* or *Promote to prod* → Run workflow, with its sha. Each application shows its 3
 newest versions, and the versions in qa and in prod (web or Android) however old. Per version, a
 line for the commit and one for its stages: an icon each (🌐 web, 📱 Android) with its duration,
@@ -59,7 +62,8 @@ This repository is public, the applications' repositories are private. The page 
 its own: every call goes to GitHub with the visitor's token, so someone without access to the
 private repositories sees nothing and starts nothing. In addition, the workflows started by hand
 (*Deploy to qa*, *Promote to prod*) stop at once unless started by the
-repository owner.
+repository owner. **↻ Relancer** only re-runs Deliver as a push to `main` already ran it:
+tests, image and qa web, nothing towards prod.
 
 Against a stolen token: the page loads no third-party script, its Content-Security-Policy only
 lets it contact GitHub's API and the applications' `/api/auth/status`, and commit messages are

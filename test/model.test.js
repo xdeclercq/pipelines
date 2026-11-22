@@ -417,6 +417,60 @@ describe('docs-only commits', () => {
   });
 });
 
+describe('re-running the commit stage', () => {
+  // A's Deliver failed before its jobs could run (no budget left): no deploy to qa either.
+  function failed() {
+    const d = data();
+    d.recent = 3;
+    d.deliverRuns[0] = run(3, A, 'completed', 'failure');
+    d.jobs[3] = [job('test', 'failure'), job('build', 'failure'), job('deploy-qa', 'skipped')];
+    d.deployments.qa = d.deployments.qa.filter((x) => x.sha !== A);
+    d.live.qa = B;
+    return d;
+  }
+
+  test('is offered in place of the failed commit stage of the newest version', () => {
+    const a = rowOf(pipeline(APP, failed()), A);
+    assert.deepEqual(a.actions.rerun, { enabled: true, run: 3, slot: 'commit' });
+    assert.equal(a.actions.deployQa.enabled, false);
+  });
+
+  test('and in the overview, under QA', () => {
+    const o = summary(APP, failed());
+    assert.deepEqual(o.actions.rerun, { sha: A, short: 'aaaaaaa', title: 'Change a', was: 'failure', run: 3 });
+    assert.equal(o.actions.deployQa, null);
+    assert.equal(o.actions.promote.sha, B, 'the version in qa can still be promoted');
+  });
+
+  test('a cancelled run too', () => {
+    const d = failed();
+    d.deliverRuns[0] = run(3, A, 'completed', 'cancelled');
+    d.jobs[3] = [job('test', 'cancelled'), job('build'), job('deploy-qa', 'skipped')];
+    assert.equal(rowOf(pipeline(APP, d), A).actions.rerun.slot, 'commit');
+  });
+
+  test('not while the run is still going, nor once the commit stage passed', () => {
+    const d = failed();
+    d.deliverRuns[0] = run(3, A, 'in_progress', null);
+    d.jobs[3] = [job('test', 'failure'), job('build', null, 'in_progress')];
+    assert.equal(rowOf(pipeline(APP, d), A).actions.rerun.enabled, false);
+    assert.equal(summary(APP, d).actions.rerun, null);
+    const p = pipeline(APP, data());
+    assert.equal(rowOf(p, A).actions.rerun.enabled, false);
+    assert.equal(summary(APP, data()).actions.rerun, null);
+  });
+
+  test('not for an older version: its deploy would put it back in qa', () => {
+    const d = data();
+    d.jobs[2] = [job('test', 'failure'), job('build'), job('deploy-qa / deploy', 'skipped')];
+    d.deliverRuns[1] = run(2, B, 'completed', 'failure');
+    const b = rowOf(pipeline(APP, d), B);
+    assert.equal(b.stages.commit.state, 'failure');
+    assert.equal(b.actions.rerun.enabled, false);
+    assert.equal(b.actions.rerun.slot, null);
+  });
+});
+
 describe('the buttons', () => {
   test('take the place of the first stage not reached, or failed, never of one that went well', () => {
     const p = pipeline(APP, data());

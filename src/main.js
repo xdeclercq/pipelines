@@ -1,10 +1,10 @@
 // Entry point: the token, the menu, the refresh loop and the buttons.
 
-import { APPS, keyOf } from './config.js';
+import { APPS, keyOf, WORKFLOWS } from './config.js';
 import { GitHub, ApiError } from './github.js';
 import { loadApp, newCache } from './load.js';
 import { pipeline, summary } from './model.js';
-import { appSection, overview, confirmText, workflowOf } from './view.js';
+import { appSection, overview, confirmText, startedText } from './view.js';
 import { shortDuration } from './format.js';
 
 const TOKEN_KEY = 'pipelines.token';
@@ -187,13 +187,13 @@ $('apps').addEventListener('click', async (e) => {
   if (!button || !gh) return;
   // Already started: no second click while it launches.
   if (button.getAttribute('aria-disabled') === 'true') return;
-  const { action, repo, sha, app } = button.dataset;
+  const { action, repo, sha, app, run } = button.dataset;
   if (!confirm(confirmText(action, app, sha))) return;
-  const workflow = workflowOf(action);
   button.setAttribute('aria-disabled', 'true');
   try {
-    await gh.dispatch(repo, workflow.file, sha);
-    say(`« ${workflow.name} » lancé pour ${sha.slice(0, 7)}.`);
+    if (action === 'rerun') await gh.rerunFailed(repo, run);
+    else await gh.dispatch(repo, WORKFLOWS[action].file, sha);
+    say(startedText(action, sha));
     setTimeout(() => refresh(), 5_000);
   } catch (err) {
     say(err instanceof ApiError && err.status === 403

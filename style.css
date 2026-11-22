@@ -100,10 +100,10 @@ footer p { margin: .4rem 0; }
 .badge { font-size: .72rem; font-weight: 700; padding: 0 .35rem; border-radius: 1rem; color: #fff; }
 .fresh .badge { background: var(--success); }
 .late .badge { background: var(--running); }
-/* Under QA, the button that deploys main there; under Prod, the one that promotes the version in QA. */
+/* Under QA, the button that deploys main there (or re-runs its failed commit stage); under Prod, the one that promotes the version in QA. */
 .orow { row-gap: .35rem; }
 .ogo { display: inline-flex; align-items: baseline; gap: .35rem; }
-.ogo.deployQa { grid-column: 2 / 4; }
+.ogo.deployQa, .ogo.rerun { grid-column: 2 / 4; }
 .ogo.promote { grid-column: 4 / 6; }
 .ogo .vsha { font-weight: normal; }
 .cell.mini .icon { --icon: .7rem; border-width: 2px; }
